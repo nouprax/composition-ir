@@ -1,8 +1,13 @@
 # Derivation contract
 
 Status: **freeze candidate**, 2026-07-31. Every normative rule is checked by a
-gate in `crates/composition-derive/tests/gates.rs`; the gate name appears in
+gate in `crates/composition-ir/tests/derive_gates.rs`; the gate name appears in
 brackets.
+
+This layer is the `derive` feature of `composition-ir`, on by default. It was
+its own crate until 0.2.0, which was a packaging accident rather than a
+decision: it depends on the IR and nothing else, and nobody would reach for it
+without the IR.
 
 Companion: [`composition-ir.md`](composition-ir.md) defines the published state
 and its delta. This document defines what the engine does *behind* that

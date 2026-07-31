@@ -5,7 +5,7 @@
 
 use std::num::NonZeroU64;
 
-use composition_derive::{Engine, Reader};
+use composition_ir::derive::{Engine, Reader};
 use composition_ir::{Address, Domain, Id, Node, Part, Revision, Rgba, Snapshot, Space};
 
 fn dom() -> Domain {
@@ -237,7 +237,7 @@ fn every_gate_the_spec_cites_exists() {
         "/../../docs/specs/derivation.md"
     ))
     .expect("the contract must be readable from the suite that enforces it");
-    let source = include_str!("gates.rs");
+    let source = include_str!("derive_gates.rs");
     let mut cited = 0usize;
     let mut rest = spec.as_str();
     while let Some(open) = rest.find("[`") {

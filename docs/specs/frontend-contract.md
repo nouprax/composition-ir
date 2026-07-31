@@ -70,13 +70,39 @@ key names the node, and the frontend answers the span.
 
 ### 2.4 Unresolved cross-unit references
 
-A reference to another document — an embed, an import, an include — is
-classified and carried as an authored string. The frontend must not open,
-read, or expand the target, and nothing target-derived may appear on the node.
+A reference to another unit is classified and carried as an authored string.
+The frontend must not open, read, or expand the target, and nothing
+target-derived may appear on the node. Two shapes qualify:
+
+- **Named** — an embed, an import, an include. The node carries the reference.
+  [`a_target_commit_never_touches_its_host`]
+- **Inline** — a span written in a grammar the frontend does not speak: a LaTeX
+  or Typst formula in Markdown, a fenced block destined for another parser. The
+  node carries the span's own bytes.
+  [`a_foreign_grammar_span_is_carried_unparsed`]
+
+The second is a unit despite sharing a source buffer with its host, because a
+unit boundary is **the smallest thing that rebuilds independently**, not a
+file. A formula's only input is its own bytes.
+
+Two consequences follow, and they are why this is not a delegation mechanism.
+
+A host frontend that parsed the span itself would take on a dependency on every
+grammar its documents might embed. Carrying it instead means a new math engine
+is a new frontend, and the host does not change.
+
+And incrementality comes free rather than needing a cache. The host publishes a
+diff on its formula record exactly when the formula's bytes change, so a
+consumer re-runs the math engine then and never otherwise — there is no cached
+layout to invalidate and no memoization to get wrong, because nothing here ever
+held one.
+[`the_host_signals_a_formula_rebuild_exactly_when_its_bytes_change`]
 
 Composing units is downstream, for the reasons in
 [`composition-ir.md`](composition-ir.md) §8. A commit on one unit produces
-nothing on another. [`a_target_commit_never_touches_its_host`]
+nothing on another — including which units to resolve at all, and with what,
+which is consumer policy: rendering a formula, showing its source, or exporting
+plain text are all valid readings of the same snapshot.
 
 ### 2.5 A change report
 

@@ -69,6 +69,54 @@ jobs:
           print("jobs.publish authenticates by OIDC, in the crates-io environment")
           PYEOF
 
+      - name: The tag the release job would accept
+        run: |
+          set -euo pipefail
+          version=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) echo "a release of this commit would be tagged v${version}" ;;
+            *) echo "::error::workspace version ${version} is not exact SemVer"; exit 1 ;;
+          esac
+
+      # The whole publish, minus the upload -- byte-identical to what the
+      # release job runs before it uploads. This became possible when the
+      # workspace collapsed to one published crate: while there were three, a
+      # dependent could not be dry-run against a sibling version that was not on
+      # the index yet, so the dry run had to skip exactly the crates most likely
+      # to break.
+      #
+      # Deliberately not `cargo package --workspace`. Packaging is a publication
+      # concern, and it demands a version requirement on every path dependency;
+      # the conformance crates and the FFI shim are never published, so that
+      # demand would be enforcing a rule about a shipment that will never
+      # happen. That they build is settled by `cargo test --workspace` in CI.
+      - name: Publish dry run
+        run: cargo publish -p composition-ir --dry-run
+
+      # An internal dependency declared by path alone is rejected only at
+      # publish time. With one publishable crate this cannot bite today, and it
+      # is kept because the moment a second one is added it can.
+      - name: Every internal dependency declares a version
+        run: |
+          python3 - <<'PYEOF'
+          import json, subprocess, sys
+          meta = json.loads(
+              subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1"])
+          )
+          members = {p["name"] for p in meta["packages"]}
+          bad = [
+              f'{p["name"]} -> {d["name"]}'
+              for p in meta["packages"]
+              if p["publish"] != []
+              for d in p["dependencies"]
+              if d["name"] in members and d["req"] == "*"
+          ]
+          if bad:
+              print("::error::internal dependencies declared by path alone: " + ", ".join(bad))
+              sys.exit(1)
+          print("every internal dependency of a publishable crate carries a version")
+          PYEOF
+
       - name: Nothing unpublishable is marked publishable
         run: |
           python3 - <<'PYEOF'
@@ -76,7 +124,7 @@ jobs:
           meta = json.loads(
               subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1"])
           )
-          expected = {"composition-ir", "composition-derive", "composition-ir-ffi"}
+          expected = {"composition-ir"}
           actual = {p["name"] for p in meta["packages"] if p["publish"] != []}
           if actual != expected:
               print(f"::error::publishable set is {sorted(actual)}, expected {sorted(expected)}")
