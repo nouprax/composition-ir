@@ -1,17 +1,20 @@
 [package]
 name = "composition-ir-ffi"
-version = "0.0.0"
+version.workspace = true
 description = "C ABI for Composition IR"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-composition-ir = { path = "../composition-ir" }
+composition-ir = { path = "../composition-ir", version = "0.1.0" }
 
 [lints]
 workspace = true

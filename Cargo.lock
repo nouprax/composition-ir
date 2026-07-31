@@ -13,35 +13,35 @@ dependencies = [
 
 [[package]]
 name = "backend-conformance"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "composition-ir",
 ]
 
 [[package]]
 name = "composition-derive"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "composition-ir",
 ]
 
 [[package]]
 name = "composition-ir"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "rpds",
 ]
 
 [[package]]
 name = "composition-ir-ffi"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "composition-ir",
 ]
 
 [[package]]
 name = "frontend-conformance"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "composition-ir",
 ]
