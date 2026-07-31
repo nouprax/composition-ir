@@ -6,6 +6,10 @@ pub enum Kind {
     Heading,
     Para,
     Embed,
+    /// A span written in another grammar -- a formula, a fenced block destined
+    /// for another parser. Classified here and parsed nowhere: this frontend
+    /// does not know the grammar and must not learn it.
+    Formula,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +67,8 @@ impl MdSession {
             }
             let kind = if line.starts_with("![[") {
                 Kind::Embed
+            } else if line.starts_with("$$") {
+                Kind::Formula
             } else if line.starts_with('#') {
                 Kind::Heading
             } else {
@@ -105,5 +111,12 @@ impl MdSession {
     /// and stops: it never opens the target.
     pub fn embed_reference(node: &MdNode) -> Option<&str> {
         node.text.strip_prefix("![[")?.strip_suffix("]]")
+    }
+
+    /// The bytes of a foreign-grammar span, unparsed. Same discipline as
+    /// `embed_reference` and for the same reason -- the difference is only that
+    /// the unit is named by inclusion rather than by path.
+    pub fn formula_source(node: &MdNode) -> Option<&str> {
+        node.text.strip_prefix("$$")?.strip_suffix("$$")
     }
 }

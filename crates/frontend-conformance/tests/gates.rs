@@ -215,6 +215,75 @@ fn a_target_commit_never_touches_its_host() {
     assert_ne!(host.snapshot.version().domain, t.snapshot.version().domain);
 }
 
+/// The other shape of cross-unit reference: a span in a grammar the host
+/// frontend does not speak. It is carried exactly like a named embed, which is
+/// the point -- sharing a source buffer with the host does not make it part of
+/// the host's unit, because a unit boundary is the smallest thing that rebuilds
+/// independently rather than a file.
+#[test]
+fn a_foreign_grammar_span_is_carried_unparsed() {
+    let mut md = MdSession::new();
+    let (ast, delta) = md.set_source("# Doc\n$$E = mc^2$$\ntail\n");
+    let c = adapter::adapt(&Snapshot::empty(dom(1), rev1()), &ast, &delta).commit;
+
+    let formula = c
+        .snapshot
+        .addresses()
+        .find(|a| c.snapshot.get(*a).unwrap().interaction == "E = mc^2")
+        .expect("the formula carries its own bytes, unparsed");
+    let record = c.snapshot.get(formula).unwrap();
+
+    // Nothing math-derived: no expansion into a subtree, and no size that only
+    // a math engine could have computed. If either appeared, this frontend
+    // would have had to link one.
+    assert!(
+        record.children.is_empty(),
+        "the host expanded a grammar it does not speak"
+    );
+    assert_eq!(record.intrinsic, "$$E = mc^2$$".len() as i64);
+}
+
+/// The signal a consumer drives the formula's unit from, checked in both
+/// directions. This is what makes two independent frontends work without any
+/// delegation machinery: the host publishes a diff on its formula record
+/// exactly when the formula's bytes change, so a consumer re-runs the math
+/// engine then and never otherwise. One direction alone proves nothing -- a
+/// record that never diffs also never diffs on a prose edit.
+#[test]
+fn the_host_signals_a_formula_rebuild_exactly_when_its_bytes_change() {
+    let mut md = MdSession::new();
+    let (a0, d0) = md.set_source("# Doc\n$$E = mc^2$$\ntail\n");
+    let mut host = adapter::adapt(&Snapshot::empty(dom(1), rev1()), &a0, &d0).commit;
+    let formula = host
+        .snapshot
+        .addresses()
+        .find(|a| host.snapshot.get(*a).unwrap().interaction == "E = mc^2")
+        .expect("the host names the formula unit");
+
+    let names_formula =
+        |c: &composition_ir::Commit| c.delta.as_slice().iter().any(|d| d.address == formula);
+
+    // Prose edits: no signal, so the math engine is not re-run.
+    for i in 0..5 {
+        let (a, d) = md.set_source(&format!("# Doc\n$$E = mc^2$$\ntail {i}\n"));
+        host = adapter::adapt(&host.snapshot, &a, &d).commit;
+        assert!(
+            !names_formula(&host),
+            "a prose edit asked the consumer to re-run the math engine"
+        );
+    }
+
+    // The formula's own bytes: a signal, and it carries the new bytes so the
+    // consumer knows what to rebuild from.
+    let (a, d) = md.set_source("# Doc\n$$E = mc^3$$\ntail 4\n");
+    host = adapter::adapt(&host.snapshot, &a, &d).commit;
+    assert!(
+        names_formula(&host),
+        "editing the formula published no signal, so a consumer would show a stale render"
+    );
+    assert_eq!(host.snapshot.get(formula).unwrap().interaction, "E = mc^3");
+}
+
 /// Path A: a consumer that never reads a delta reaches the same state.
 #[test]
 fn a_consumer_that_ignores_every_delta_agrees_with_one_that_does_not() {

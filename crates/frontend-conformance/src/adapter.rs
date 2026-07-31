@@ -54,9 +54,20 @@ fn project(n: &MdNode) -> Node {
                 b: 0xcc,
                 a: 0xff,
             },
+            Kind::Formula => Rgba {
+                r: 0x66,
+                g: 0x00,
+                b: 0xcc,
+                a: 0xff,
+            },
         },
-        // an embed is a leaf naming a reference; nothing target-derived
+        // Both shapes of cross-unit reference land here, as a leaf naming
+        // another unit and nothing derived from it. A formula carries its own
+        // bytes rather than a path, which is the only difference: this adapter
+        // does not parse them and does not link a math engine to find out what
+        // they mean.
         interaction: MdSession::embed_reference(n)
+            .or_else(|| MdSession::formula_source(n))
             .unwrap_or_default()
             .to_string(),
         intrinsic: n.text.len() as i64,
