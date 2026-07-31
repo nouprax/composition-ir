@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/composition-ir",
-    "crates/frontend-conformance",
-    "crates/composition-ir-ffi",
-    "crates/backend-conformance",
+    "packages/composition-ir",
+    "packages/composition-ir-ffi",
+    "conformance/frontend",
+    "conformance/backend",
 ]
 
 [workspace.package]

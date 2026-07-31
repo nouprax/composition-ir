@@ -1,7 +1,7 @@
 # Backend contract
 
 Status: **frozen**, 2026-07-31. Every normative rule cites a gate in
-`crates/backend-conformance/tests/gates.rs`. Section 5 records what was open,
+`conformance/backend/tests/gates.rs`. Section 5 records what was open,
 how each item closed, and what is deliberately still absent.
 
 ## 1. What a backend is

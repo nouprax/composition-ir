@@ -16,7 +16,7 @@ fn rev1() -> Revision {
     Revision(NonZeroU64::new(1).unwrap())
 }
 const ADAPTER: &str = include_str!("../src/adapter.rs");
-const IR_MANIFEST: &str = include_str!("../../composition-ir/Cargo.toml");
+const IR_MANIFEST: &str = include_str!("../../../packages/composition-ir/Cargo.toml");
 
 /// The frontend contract is whatever the adapter has to do. If that is large,
 /// the IR is specifying the frontend rather than accepting one.

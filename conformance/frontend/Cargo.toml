@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-composition-ir = { path = "../composition-ir" }
+composition-ir = { path = "../../packages/composition-ir" }
 
 [lints]
 workspace = true
