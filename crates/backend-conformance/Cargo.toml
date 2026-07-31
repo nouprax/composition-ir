@@ -1,14 +1,15 @@
 [package]
 name = "backend-conformance"
-version = "0.0.0"
+version.workspace = true
 description = "Executable form of the backend contract: three stand-in output targets and the gates"
 edition.workspace = true
+publish = false
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-composition-ir = { path = "../composition-ir" }
+composition-ir = { path = "../composition-ir", version = "0.1.0" }
 
 [lints]
 workspace = true

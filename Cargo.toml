@@ -9,10 +9,14 @@ members = [
 ]
 
 [workspace.package]
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
 repository = "https://github.com/nouprax/composition-ir"
+readme = "README.md"
+keywords = ["incremental", "diff", "document", "ir", "persistent"]
+categories = ["data-structures", "text-processing"]
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"
