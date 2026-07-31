@@ -1,7 +1,7 @@
 # Derivation contract
 
 Status: **freeze candidate**, 2026-07-31. Every normative rule is checked by a
-gate in `crates/composition-ir/tests/derive_gates.rs`; the gate name appears in
+gate in `packages/composition-ir/tests/derive_gates.rs`; the gate name appears in
 brackets.
 
 This layer is the `derive` feature of `composition-ir`, on by default. It was

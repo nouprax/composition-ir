@@ -8,8 +8,8 @@ consumer existed was the error, and the rule it produced is that a claim about
 a consumer nothing has exercised is a hypothesis.
 
 Every normative rule below is checked by a gate
-in `crates/composition-ir/tests/gates.rs` or
-`crates/composition-ir-ffi/tests/gates.rs`; the gate name appears in brackets. A
+in `packages/composition-ir/tests/gates.rs` or
+`packages/composition-ir-ffi/tests/gates.rs`; the gate name appears in brackets. A
 rule with no gate is not normative.
 
 Companions: [`derivation.md`](derivation.md) for engine-internal recomputation,

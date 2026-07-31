@@ -65,13 +65,24 @@ jobs:
       - name: Every cited gate exists
         run: |
           set -euo pipefail
+          # Test files are discovered rather than read from a hardcoded tree, so
+          # moving a package cannot silently turn this check into a no-op. That
+          # is not hypothetical: the previous `crates/*/tests/` spelling would
+          # have started matching nothing the moment anything moved, and a check
+          # that finds no files is a check that passes.
+          test_dirs=$(find . -path ./target -prune -o -type d -name tests -print)
+          if [ -z "$test_dirs" ]; then
+            echo "::error::found no test directories; this check would pass vacuously"
+            exit 1
+          fi
+          echo "searching:" $test_dirs
           fail=0
           for spec in docs/specs/*.md; do
-            grep -o '\[`[a-z_][a-z_0-9]*`\]' "$spec" 2>/dev/null | tr -d '[`]' | sort -u | while read -r gate; do
-              if ! grep -rq "fn ${gate}(" crates/*/tests/; then
+            for gate in $(grep -o '\[`[a-z_][a-z_0-9]*`\]' "$spec" 2>/dev/null | tr -d '[`]' | sort -u); do
+              if ! grep -rq "fn ${gate}(" $test_dirs; then
                 echo "::error file=${spec}::cites a gate that does not exist: ${gate}"
-                exit 1
+                fail=1
               fi
-            done || fail=1
+            done
           done
           exit $fail

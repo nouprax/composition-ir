@@ -1,7 +1,7 @@
 # Frontend contract
 
 Status: **freeze candidate**, 2026-07-31. Every normative rule is checked by a
-gate in `crates/frontend-conformance/tests/gates.rs`; the gate name appears in
+gate in `conformance/frontend/tests/gates.rs`; the gate name appears in
 brackets.
 
 This document states what Composition IR requires of a frontend. It is short on
@@ -153,7 +153,7 @@ Nothing in this contract depends on where it is compiled.
 
 ## 5. Conformance
 
-`crates/frontend-conformance` is the executable form of this document: a
+`conformance/frontend` is the executable form of this document: a
 fixture frontend providing exactly the surface above, its adapter, and the
 gates. A real frontend is expected to be checkable by the same gates with its
 own fixture swapped in, which is the intended acceptance path for
