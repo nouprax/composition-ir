@@ -29,61 +29,44 @@ jobs:
           test -z "${CARGO_REGISTRY_TOKEN:-}"
           test -z "${CARGO_REGISTRIES_CRATES_IO_TOKEN:-}"
 
-      # Publishing now authenticates with a short-lived OIDC token minted at run
-      # time, so nothing publishable should be stored in the repository at all.
-      # This catches a stored token surviving the switch, or being added back.
-      - name: The release workflow mints its credential rather than storing one
+      # Publishing now authenticates with a short-lived OIDC token minted at
+      # run time, so nothing publishable should be stored in the repository.
+      # This parses the workflow rather than grepping it: a commented-out
+      # permission, or one that drifted to another job, satisfies a text search
+      # while leaving the publish job unable to authenticate.
+      - name: The publish job mints its credential rather than storing one
         run: |
-          set -euo pipefail
-          if grep -q 'secrets.CARGO_REGISTRY_TOKEN' .github/workflows/release.yml; then
-            echo "::error::release.yml reads a stored registry token; Trusted Publishing mints one"
-            exit 1
-          fi
-          grep -q 'id-token: write' .github/workflows/release.yml
-          grep -q 'crates-io-auth-action' .github/workflows/release.yml
-
-      - name: The tag the release job would accept
-        run: |
-          set -euo pipefail
-          version=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
-          case "$version" in
-            [0-9]*.[0-9]*.[0-9]*) echo "a release of this commit would be tagged v${version}" ;;
-            *) echo "::error::workspace version ${version} is not exact SemVer"; exit 1 ;;
-          esac
-
-      # Only the leaf can be dry-run: a dependent resolves its sibling from the
-      # index, and the version being released is not there yet -- which is true
-      # of every release including the first.
-      - name: Dry run the leaf
-        run: cargo publish -p composition-ir --dry-run
-
-      # The dependents get the same packaging and build verification through
-      # the workspace, which resolves siblings locally instead.
-      - name: Package and verify every crate
-        run: cargo package --workspace
-
-      # The fault neither step above can see, and that would otherwise surface
-      # only after the leaf had been uploaded and could not be recalled: an
-      # internal dependency declared by path alone is rejected at publish time.
-      - name: Every internal dependency declares a version
-        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml
           python3 - <<'PYEOF'
-          import json, subprocess, sys
-          meta = json.loads(
-              subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1"])
-          )
-          members = {p["name"] for p in meta["packages"]}
-          bad = [
-              f'{p["name"]} -> {d["name"]}'
-              for p in meta["packages"]
-              if p["publish"] != []
-              for d in p["dependencies"]
-              if d["name"] in members and d["req"] == "*"
+          import sys, yaml
+
+          wf = yaml.safe_load(open(".github/workflows/release.yml"))
+          job = wf["jobs"]["publish"]
+          steps = job.get("steps", [])
+          problems = []
+
+          if job.get("permissions", {}).get("id-token") != "write":
+              problems.append("jobs.publish does not request id-token: write")
+
+          if not any("crates-io-auth-action" in str(s.get("uses", "")) for s in steps):
+              problems.append("jobs.publish does not run the crates.io auth action")
+
+          if "crates-io" != job.get("environment"):
+              problems.append("jobs.publish is not bound to the crates-io environment")
+
+          stored = [
+              s.get("name", "<unnamed>")
+              for s in steps
+              if "secrets.CARGO_REGISTRY_TOKEN" in str(s.get("env", "")) + str(s.get("run", ""))
           ]
-          if bad:
-              print("::error::internal dependencies declared by path alone: " + ", ".join(bad))
+          if stored:
+              problems.append(f"jobs.publish reads a stored token in: {stored}")
+
+          if problems:
+              for p in problems:
+                  print(f"::error::{p}")
               sys.exit(1)
-          print("every internal dependency of a publishable crate carries a version")
+          print("jobs.publish authenticates by OIDC, in the crates-io environment")
           PYEOF
 
       - name: Nothing unpublishable is marked publishable

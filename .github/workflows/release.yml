@@ -52,6 +52,14 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --all-targets
 
+      # Packaging is re-verified here for the same reason the tests are: a tag
+      # can be created before the merge-time run finishes, or after it was
+      # cancelled, and the ancestry check still passes. A package-only defect
+      # found by `cargo publish` would be found after the leaf was already
+      # uploaded and could not be recalled -- the partial release this whole
+      # workflow exists to prevent.
+      - run: cargo package --workspace
+
   publish:
     name: publish to crates.io
     needs: gates
