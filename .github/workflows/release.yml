@@ -55,10 +55,16 @@ jobs:
       # Packaging is re-verified here for the same reason the tests are: a tag
       # can be created before the merge-time run finishes, or after it was
       # cancelled, and the ancestry check still passes. A package-only defect
-      # found by `cargo publish` would be found after the leaf was already
-      # uploaded and could not be recalled -- the partial release this whole
-      # workflow exists to prevent.
-      - run: cargo package --workspace
+      # found by `cargo publish` would be found after the upload had already
+      # happened and could not be recalled.
+      #
+      # This is the publish minus the upload, not `cargo package --workspace`:
+      # packaging is a publication concern, and the conformance crates and the
+      # FFI shim are never published. Requiring them to package would force
+      # version requirements onto path dependencies that no shipment will ever
+      # read. That they still build is what `cargo test --workspace` above
+      # proves.
+      - run: cargo publish -p composition-ir --dry-run
 
   publish:
     name: publish to crates.io

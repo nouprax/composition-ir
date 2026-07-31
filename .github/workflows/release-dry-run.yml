@@ -78,18 +78,20 @@ jobs:
             *) echo "::error::workspace version ${version} is not exact SemVer"; exit 1 ;;
           esac
 
-      # The whole publish, minus the upload. This became possible when the
+      # The whole publish, minus the upload -- byte-identical to what the
+      # release job runs before it uploads. This became possible when the
       # workspace collapsed to one published crate: while there were three, a
       # dependent could not be dry-run against a sibling version that was not on
       # the index yet, so the dry run had to skip exactly the crates most likely
       # to break.
+      #
+      # Deliberately not `cargo package --workspace`. Packaging is a publication
+      # concern, and it demands a version requirement on every path dependency;
+      # the conformance crates and the FFI shim are never published, so that
+      # demand would be enforcing a rule about a shipment that will never
+      # happen. That they build is settled by `cargo test --workspace` in CI.
       - name: Publish dry run
         run: cargo publish -p composition-ir --dry-run
-
-      # The rest of the workspace still has to package: a crate that stops
-      # packaging is a crate that cannot be published later.
-      - name: Package and verify every crate
-        run: cargo package --workspace
 
       # An internal dependency declared by path alone is rejected only at
       # publish time. With one publishable crate this cannot bite today, and it
