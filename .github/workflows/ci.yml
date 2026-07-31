@@ -42,11 +42,16 @@ jobs:
       - name: Doc tests
         run: cargo test --workspace --doc
 
-      # Packaging breaks in ways the test suite cannot see -- a missing file, a
-      # path dependency without a version, an excluded module. Catching it here
+      # Packaging breaks in ways the test suite cannot see -- a missing file, an
+      # excluded module, a path dependency without a version. Catching it here
       # means a release tag never fails halfway through publishing.
+      #
+      # Scoped to the crate that ships rather than the whole workspace, because
+      # packaging is a publication concern: it demands a version requirement
+      # from every path dependency it touches, and the conformance crates and
+      # the FFI shim are never published. That they build is settled above.
       - name: Packaging
-        run: cargo package --workspace --allow-dirty
+        run: cargo publish -p composition-ir --dry-run --allow-dirty
 
   contracts:
     name: contracts cite gates
