@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/composition-ir",
+    "crates/composition-derive",
+    "crates/frontend-conformance",
+    "crates/composition-ir-ffi",
+    "crates/backend-conformance",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/nouprax/composition-ir"
+
+[workspace.lints.rust]
+missing_debug_implementations = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
