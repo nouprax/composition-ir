@@ -11,6 +11,8 @@
 
 mod address;
 mod delta;
+#[cfg(feature = "derive")]
+pub mod derive;
 mod node;
 mod placement;
 mod snapshot;

@@ -1,13 +1,18 @@
-//! The engine-internal derivation layer: memoized computations that record
-//! what they read, and are invalidated by intersecting those reads with a
-//! commit's diff.
+//! Memoized computations that record what they read, invalidated by
+//! intersecting those reads with a commit's diff.
 //!
-//! This is deliberately *not* a consumer API. Nothing here is published, and no
-//! consumer registers anything: the readers are the engine's own derived cells.
+//! This is not a consumer registry. Nothing here is published to a consumer and
+//! no consumer registers anything: the readers are the engine's own derived
+//! cells, and the direction of ownership is what separates the two
+//! (`docs/specs/derivation.md` section 1).
+//!
+//! Behind the default `derive` feature. It lived in its own crate until 0.2.0,
+//! which was a packaging accident rather than a decision: it depends on this
+//! crate and nothing else, and nobody would reach for it without the IR.
 
 use std::collections::HashMap;
 
-use composition_ir::{Address, Delta, Node, Part, Snapshot};
+use crate::{Address, Delta, Node, Part, Snapshot};
 
 /// One thing a computation read. Negative and positive reads are both
 /// recorded: a computation that concluded "this address is absent" is just as

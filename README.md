@@ -74,18 +74,24 @@ crates/composition-ir/       the IR: snapshots, deltas, placement
   src/snapshot.rs            published state and the commit builder
   src/delta.rs               the membership law
   src/placement.rs           absolute placement as a query
+  src/derive.rs              memoization and invalidation (`derive` feature)
   tests/gates.rs             the contract, executable
-crates/composition-derive/   engine-internal memoization and invalidation
-  src/lib.rs                 recording readers, receipts, survival
-  tests/gates.rs             the derivation contract, executable
+  tests/derive_gates.rs      the derivation contract, executable
 crates/composition-ir-ffi/   the C ABI: opaque handles, zero-copy value types
 crates/frontend-conformance/ the frontend contract, executable
-crates/backend-conformance/  three output targets and their gates
   src/fixture.rs             a stand-in frontend providing the required surface
   src/adapter.rs             the whole seam between a frontend and the IR
   tests/gates.rs             boundary and cost gates a real frontend must pass
+crates/backend-conformance/  three output targets and their gates
+  src/{svg,raster,paged}.rs  retained, immediate-mode, and paginated
+  tests/gates.rs             what a backend may read, and what it costs
 docs/specs/                  the contracts, normative
 ```
+
+`composition-ir` is the only crate published to crates.io. The others are
+executable contracts, except the FFI shim: crates.io distributes source for
+Rust dependents, and a C consumer links a built library rather than adding a
+Cargo dependency.
 
 ## License
 

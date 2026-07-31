@@ -83,21 +83,10 @@ jobs:
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
-      # Dependency order, because a dependent cannot resolve a version that is
-      # not on the index yet. `--no-verify` is deliberately not used: the
-      # package must build from what was actually packaged.
+      # One crate, so no dependency ordering and no waiting for the index.
+      # `--no-verify` is deliberately not used: the package must build from what
+      # was actually packaged.
       - name: Publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: |
-          set -euo pipefail
-          for crate in composition-ir composition-derive composition-ir-ffi; do
-            echo "::group::publish ${crate}"
-            cargo publish -p "${crate}"
-            echo "::endgroup::"
-            # the index needs a moment before a dependent can resolve it
-            for _ in $(seq 1 30); do
-              cargo search "${crate}" --limit 1 | grep -q "^${crate} = \"${GITHUB_REF_NAME#v}\"" && break
-              sleep 10
-            done
-          done
+        run: cargo publish -p composition-ir

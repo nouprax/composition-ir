@@ -10,6 +10,12 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+default = ["derive"]
+# Memoization and invalidation over a snapshot. Default because the workloads
+# this IR exists for all derive something expensive from it.
+derive = []
+
 [dependencies]
 rpds = "1"
 
