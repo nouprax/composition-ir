@@ -1,0 +1,89 @@
+name: release dry run
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-dry-run-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dry-run:
+    name: release dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@v2
+
+      # The release path must be exercisable without credentials, or it stays a
+      # hypothesis until the first tag, which is the worst moment to find out
+      # that it does not work.
+      - name: Prove the dry run has no release credentials
+        run: |
+          test -z "${CARGO_REGISTRY_TOKEN:-}"
+          test -z "${CARGO_REGISTRIES_CRATES_IO_TOKEN:-}"
+
+      - name: The tag the release job would accept
+        run: |
+          set -euo pipefail
+          version=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) echo "a release of this commit would be tagged v${version}" ;;
+            *) echo "::error::workspace version ${version} is not exact SemVer"; exit 1 ;;
+          esac
+
+      # Only the leaf can be dry-run: a dependent resolves its sibling from the
+      # index, and the version being released is not there yet -- which is true
+      # of every release including the first.
+      - name: Dry run the leaf
+        run: cargo publish -p composition-ir --dry-run
+
+      # The dependents get the same packaging and build verification through
+      # the workspace, which resolves siblings locally instead.
+      - name: Package and verify every crate
+        run: cargo package --workspace
+
+      # The fault neither step above can see, and that would otherwise surface
+      # only after the leaf had been uploaded and could not be recalled: an
+      # internal dependency declared by path alone is rejected at publish time.
+      - name: Every internal dependency declares a version
+        run: |
+          python3 - <<'PYEOF'
+          import json, subprocess, sys
+          meta = json.loads(
+              subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1"])
+          )
+          members = {p["name"] for p in meta["packages"]}
+          bad = [
+              f'{p["name"]} -> {d["name"]}'
+              for p in meta["packages"]
+              if p["publish"] != []
+              for d in p["dependencies"]
+              if d["name"] in members and d["req"] == "*"
+          ]
+          if bad:
+              print("::error::internal dependencies declared by path alone: " + ", ".join(bad))
+              sys.exit(1)
+          print("every internal dependency of a publishable crate carries a version")
+          PYEOF
+
+      - name: Nothing unpublishable is marked publishable
+        run: |
+          python3 - <<'PYEOF'
+          import json, subprocess, sys
+          meta = json.loads(
+              subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1"])
+          )
+          expected = {"composition-ir", "composition-derive", "composition-ir-ffi"}
+          actual = {p["name"] for p in meta["packages"] if p["publish"] != []}
+          if actual != expected:
+              print(f"::error::publishable set is {sorted(actual)}, expected {sorted(expected)}")
+              sys.exit(1)
+          print("publishable:", sorted(actual))
+          PYEOF
