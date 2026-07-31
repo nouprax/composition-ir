@@ -29,6 +29,19 @@ jobs:
           test -z "${CARGO_REGISTRY_TOKEN:-}"
           test -z "${CARGO_REGISTRIES_CRATES_IO_TOKEN:-}"
 
+      # Publishing now authenticates with a short-lived OIDC token minted at run
+      # time, so nothing publishable should be stored in the repository at all.
+      # This catches a stored token surviving the switch, or being added back.
+      - name: The release workflow mints its credential rather than storing one
+        run: |
+          set -euo pipefail
+          if grep -q 'secrets.CARGO_REGISTRY_TOKEN' .github/workflows/release.yml; then
+            echo "::error::release.yml reads a stored registry token; Trusted Publishing mints one"
+            exit 1
+          fi
+          grep -q 'id-token: write' .github/workflows/release.yml
+          grep -q 'crates-io-auth-action' .github/workflows/release.yml
+
       - name: The tag the release job would accept
         run: |
           set -euo pipefail
