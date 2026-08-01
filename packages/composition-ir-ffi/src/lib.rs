@@ -10,6 +10,7 @@
 //! operates on or produces.
 
 pub mod layout;
+pub mod record;
 
 use std::sync::Arc;
 
@@ -19,7 +20,7 @@ use composition_ir::{Address, Delta, Diff, Snapshot, SnapshotVersion};
 /// releasing it is the only thing a caller must remember to do.
 #[derive(Debug)]
 pub struct CirSnapshot {
-    inner: Arc<Snapshot>,
+    pub(crate) inner: Arc<Snapshot>,
 }
 
 /// An opaque retained delta.

@@ -315,6 +315,53 @@ and reference-counted, releasing one handle does not invalidate another, and a
 handle is the only thing a caller must remember to release.
 [`handles_are_retained_and_released_independently`]
 
+A **record** crosses as a borrowed pointer, and its fields as borrowed views
+into the IR's own allocations. It cannot cross by value — it holds `String` and
+`Vec`, whose layouts Rust does not guarantee — and copying one out per record
+would be the per-entry conversion this boundary is shaped to avoid, paid on the
+initial render of every document.
+[`reading_a_record_borrows_the_irs_own_bytes`]
+
+The record is looked up once and its fields read from that pointer, rather than
+each accessor taking an address. That is one lookup per record instead of one
+per field, and it means **absence is answered once**: the lookup returns null,
+so no accessor has to invent a sentinel a caller would then have to tell apart
+from empty text or a zero.
+[`an_absent_address_is_null_rather_than_an_empty_record`]
+
+The whole surface must be sufficient to drive a consumer, not merely cheap. A
+document is walked from `cir_snapshot_roots` through `cir_node_children` and
+rendered using `cir_*` calls alone.
+[`a_consumer_can_render_from_the_c_boundary_alone`]
+
+**Roots are entry points, not the census.** A `children` walk reaches what a
+builder rooted and nothing else, and the non-`Node` spaces are not reachable
+that way at all — a `Resource` is named by role, a `Frame` by fragment index.
+So the boundary also exposes the live set directly, which is what every
+reference renderer consumes: `cir_snapshot_len` sizes it and
+`cir_snapshot_addresses` fills a caller-owned buffer, in unspecified order.
+This is the one call here that copies. The records are in a persistent hash trie
+by §4's instance-sharing requirement, so nothing contiguous exists to borrow,
+and materializing one on the snapshot would charge every commit for a consumer
+that may never enumerate. The copy is `O(live)`, once per snapshot, paid only by
+the caller that asks.
+[`a_consumer_enumerates_the_live_set_not_only_what_was_rooted`]
+
+Sufficiency of the *fields* is a separate claim from sufficiency of the walk,
+and hand-written cases cannot carry it: five accessors return `CirBytes` and
+four return a scalar, so any two of a kind could be crossed and still render
+plausibly. The C projection of every exported field equals the Rust one, over
+randomized record shapes.
+[`the_c_projection_of_every_field_equals_the_rust_one`]
+
+Placement stays a query here too, so a move costs a call and publishes nothing.
+[`a_move_is_answered_by_the_placement_query_not_by_the_delta`]
+
+One consequence for the IR: a record's resource references are a
+`#[repr(C)] ResourceRef`, not a tuple. A Rust tuple has no guaranteed layout,
+so a tuple field could only cross by being converted per record — which is the
+copy again, in the one place it would be least visible.
+
 Calls are named `cir_<subject>_<verb>`, the subject being the type the call
 operates on or produces.
 
