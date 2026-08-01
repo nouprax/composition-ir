@@ -84,8 +84,16 @@ pub unsafe extern "C" fn cir_snapshot_node(
         .map_or(std::ptr::null(), std::sync::Arc::as_ptr)
 }
 
-/// Where the document starts. A consumer renders by walking children from here;
-/// there is no separate enumeration call because a traversal needs none.
+/// Where a document's tree starts, in order. A consumer renders a tree by
+/// walking children from here.
+///
+/// Roots are declared entry points, not the census, and the two are not the
+/// same set. A builder decides what to call a root, nothing requires a live
+/// record to hang beneath one, and a `children` walk cannot reach the
+/// non-`Node` spaces even in principle -- a `Resource` is named by role, a
+/// `Frame` by fragment index, an `Origin` or `Destination` by an interaction
+/// string. `cir_snapshot_addresses` is the complete set, and it is what the
+/// reference renderers consume.
 ///
 /// # Safety
 /// As `cir_snapshot_node`.
@@ -97,6 +105,51 @@ pub unsafe extern "C" fn cir_snapshot_roots(snapshot: *const CirSnapshot) -> Cir
         ptr: roots.as_ptr(),
         len: roots.len(),
     }
+}
+
+/// How many records are live: exactly the buffer `cir_snapshot_addresses`
+/// needs.
+///
+/// # Safety
+/// As `cir_snapshot_node`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cir_snapshot_len(snapshot: *const CirSnapshot) -> usize {
+    unsafe { &*snapshot }.inner.len()
+}
+
+/// Every live address, written into a caller-owned buffer. Returns the total
+/// live count and writes at most `cap`, so a call with `cap` of 0 sizes the
+/// buffer without writing.
+///
+/// This is the one call on this boundary that copies, and the reason is
+/// structural rather than an oversight worth fixing. Records live in a
+/// persistent hash trie because §4 requires unchanged records to be shared *by
+/// instance* across live snapshots -- the same requirement that rules out a
+/// flat `Vec` -- so the live addresses are not contiguous anywhere and there is
+/// nothing to borrow. Keeping a materialized `Vec<Address>` on the snapshot to
+/// borrow from would charge every commit for a consumer that may never
+/// enumerate, and would add a member the state can already answer. So the copy
+/// is `O(live)`, once per snapshot, on the initial-render path, and only the
+/// caller that asks for it pays.
+///
+/// The order is **unspecified**. It is the trie's, and a consumer must not
+/// depend on it; the reference renderers sort by paint position, which is what
+/// a consumer actually needs and is not this call's business to guess.
+///
+/// # Safety
+/// As `cir_snapshot_node`. `out` must be writable for `cap` addresses, and may
+/// be null when `cap` is 0.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cir_snapshot_addresses(
+    snapshot: *const CirSnapshot,
+    out: *mut Address,
+    cap: usize,
+) -> usize {
+    let s = unsafe { &*snapshot };
+    for (i, a) in s.inner.addresses().take(cap).enumerate() {
+        unsafe { *out.add(i) = a };
+    }
+    s.inner.len()
 }
 
 /// Absolute placement, with every translation covering the address folded in.

@@ -331,9 +331,28 @@ from empty text or a zero.
 
 The whole surface must be sufficient to drive a consumer, not merely cheap. A
 document is walked from `cir_snapshot_roots` through `cir_node_children` and
-rendered using `cir_*` calls alone — no enumeration call, because a traversal
-needs none.
+rendered using `cir_*` calls alone.
 [`a_consumer_can_render_from_the_c_boundary_alone`]
+
+**Roots are entry points, not the census.** A `children` walk reaches what a
+builder rooted and nothing else, and the non-`Node` spaces are not reachable
+that way at all — a `Resource` is named by role, a `Frame` by fragment index.
+So the boundary also exposes the live set directly, which is what every
+reference renderer consumes: `cir_snapshot_len` sizes it and
+`cir_snapshot_addresses` fills a caller-owned buffer, in unspecified order.
+This is the one call here that copies. The records are in a persistent hash trie
+by §4's instance-sharing requirement, so nothing contiguous exists to borrow,
+and materializing one on the snapshot would charge every commit for a consumer
+that may never enumerate. The copy is `O(live)`, once per snapshot, paid only by
+the caller that asks.
+[`a_consumer_enumerates_the_live_set_not_only_what_was_rooted`]
+
+Sufficiency of the *fields* is a separate claim from sufficiency of the walk,
+and hand-written cases cannot carry it: five accessors return `CirBytes` and
+four return a scalar, so any two of a kind could be crossed and still render
+plausibly. The C projection of every exported field equals the Rust one, over
+randomized record shapes.
+[`the_c_projection_of_every_field_equals_the_rust_one`]
 
 Placement stays a query here too, so a move costs a call and publishes nothing.
 [`a_move_is_answered_by_the_placement_query_not_by_the_delta`]
