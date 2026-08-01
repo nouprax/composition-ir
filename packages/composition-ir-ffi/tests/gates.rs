@@ -7,7 +7,7 @@ use composition_ir::{
     Address, Diff, Domain, Id, Node, Parts, Rect, Revision, Rgba, Snapshot, Space,
 };
 use composition_ir_ffi::record::{
-    CirBytes, CirNode, cir_node_children, cir_node_font, cir_node_fragments, cir_node_interaction,
+    CirBytes, cir_node_children, cir_node_font, cir_node_fragments, cir_node_interaction,
     cir_node_intrinsic, cir_node_lines, cir_node_paint, cir_node_resources, cir_node_source_link,
     cir_node_text, cir_node_text_map, cir_node_valid, cir_snapshot_addresses, cir_snapshot_len,
     cir_snapshot_node, cir_snapshot_rect, cir_snapshot_roots,
@@ -166,7 +166,7 @@ fn a_consumer_can_render_from_the_c_boundary_alone() {
     let snapshot = CirSnapshot::into_raw(e.commit().snapshot);
 
     // Everything below is what a Swift, Kotlin, or JavaScript binding does.
-    unsafe fn text_of(node: *const CirNode) -> String {
+    unsafe fn text_of(node: *const Node) -> String {
         let t = unsafe { cir_node_text(node) };
         String::from_utf8(unsafe { std::slice::from_raw_parts(t.ptr, t.len) }.to_vec()).unwrap()
     }

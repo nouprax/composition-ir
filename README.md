@@ -82,9 +82,11 @@ packages/                    what ships
     tests/gates.rs           the contract, executable
     tests/derive_gates.rs    the derivation contract, executable
   composition-ir-ffi/        the C ABI: opaque handles, zero-copy value types
+    include/composition_ir.h the C header, generated from the source
     abi/layout.json          the published field layout; bindings generate from it
     src/layout.rs            generates it from the compiled types
     tests/layout_gates.rs    fails when the ABI and that file disagree
+    tests/header_gates.rs    compiles and links a C consumer against the header
 
 conformance/                 what proves the contracts, and never ships
   frontend/                  the frontend contract, executable
@@ -113,6 +115,12 @@ Directories are not created before the package inside them exists.
 `composition-ir` is the only crate published to crates.io. The FFI shim is not:
 crates.io distributes source for Rust dependents, and a C consumer links a
 built library rather than adding a Cargo dependency.
+
+A consumer therefore starts from two artifacts, not one. The header is what a
+compiler reads; `abi/layout.json` is what a binding that reads fields out of
+foreign memory by offset reads, and it states which ABI it describes. Both are
+generated and committed, so a change to either is a diff on a reviewable file
+rather than behaviour discovered in the field.
 
 ## License
 

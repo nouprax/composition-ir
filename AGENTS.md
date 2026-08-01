@@ -159,6 +159,13 @@ measure it directly rather than inferring it from timing.
 - A check that finds no files passes. Any check that walks a tree must discover
   what it walks and fail loudly on an empty result, never hardcode a path that
   a directory move silently empties.
+- **A generated artifact is checked against the thing it describes, not against
+  its own generator.** Regenerating and comparing proves the generator is
+  deterministic and nothing else. Check against the built output — a symbol
+  table, a compiler, a linker — because that is the only statement of what was
+  produced that no spelling in the source can hide from. `cbindgen` not
+  expanding `macro_rules!` left five exports out of the C header while every
+  text comparison agreed.
 
 ## Failure modes already proven in this codebase
 

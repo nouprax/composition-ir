@@ -128,6 +128,30 @@ one that reaches this project — `Address.id` sits at 4 rather than 8 and a
 differs needs its own committed manifest; and regenerating over another ABI's
 manifest is refused rather than allowed.
 
+### The header is generated, and checked against the library rather than itself
+
+`cbindgen`, from the Rust source, committed. Committed for the reason
+`abi/layout.json` is: a change to the ABI should arrive as a diff someone
+reviews, not as behaviour someone finds. Unlike the manifest it is not
+per-target — a C compiler computes offsets for whatever it compiles for, so one
+header covers every ABI.
+
+The generator being a dev-dependency rather than an installed CLI is the whole
+reason the check runs: `cargo test` regenerates and compares with nothing
+installed, and a check that needs a tool nobody has is a check that gets
+skipped.
+
+What was learned writing it: **a generated artifact must be checked against the
+thing it describes, not against its own generator.** Comparing the committed
+header to a freshly generated one proves only that the generator is
+deterministic. It cannot see the case that actually happened here — `cbindgen`
+does not expand `macro_rules!`, so five accessors written as one macro, and the
+`CirBytes` they return, were absent from the header while every text comparison
+agreed. Nothing failed to compile and nothing failed to link; a C consumer
+simply had no way to read any text. Completeness is now checked against the
+built library's symbol table, which no spelling in the source can hide from, and
+the macro is written out longhand.
+
 ## Working method
 
 `AGENTS.md` has the engineering standard. Two things belong here because they
@@ -155,10 +179,16 @@ something.
 
 ## Next, in order
 
-1. **cbindgen header and the release-artifact pipeline.** `.a`/`.dylib`/`.so`,
-   the generated header, and `abi/layout.json` attached to a GitHub release.
-   This is what a binding consumes, and no binding can be written before it
-   exists.
+1. **The release-artifact pipeline.** `.a`/`.dylib`/`.so` for each target the
+   products ship to, with the header and `abi/layout.json` beside them, attached
+   to a GitHub release. This is what a binding consumes, and no binding can be
+   written before it exists. The header itself is done and committed; what is
+   left is building the libraries per target and publishing the set.
+
+   One thing to settle there rather than assume: Android's `x86` ABI aligns
+   `u64` to 4, so shipping a library for it means committing a second manifest
+   for it, and the gate that refuses to regenerate over another ABI's manifest
+   has never been exercised against a target that actually differs.
 2. **The queries the SBS workloads need**, which are the four "does not exist
    yet" rows above: `address_at(point)`, a viewport query over `Placement` for
    visible-set culling, the frontend's inverse `offset → address`, and an

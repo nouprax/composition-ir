@@ -18,8 +18,11 @@ use composition_ir::{Address, Node, Rect, ResourceRef, Rgba};
 
 use crate::CirSnapshot;
 
-/// A borrowed record. Valid while the snapshot it came from is retained.
-pub type CirNode = Node;
+// A record crosses as `*const Node`, which the header spells `CirNode`. There
+// was a `pub type CirNode = Node` here to say so in Rust as well, and it cost a
+// header that did not compile: the alias and the type it aliases are two
+// exported names for one opaque struct, so the generator published `CirNode`
+// twice under different spellings. One name, renamed at the boundary.
 
 /// UTF-8 text, borrowed. Not NUL-terminated: the IR's text may contain NUL, and
 /// a length is what the IR already has.
@@ -77,7 +80,7 @@ impl CirBytes {
 pub unsafe extern "C" fn cir_snapshot_node(
     snapshot: *const CirSnapshot,
     address: Address,
-) -> *const CirNode {
+) -> *const Node {
     let s = unsafe { &*snapshot };
     s.inner
         .get(address)
@@ -181,44 +184,68 @@ pub unsafe extern "C" fn cir_snapshot_rect(
 // # Safety
 // In every case `node` must be a non-null pointer from `cir_snapshot_node`
 // whose snapshot is still retained.
+//
+// The five text accessors below were a `macro_rules!` that generated all of
+// them from a field name, which is the shape this code wants and which cost
+// exactly the thing this crate exists to produce: `cbindgen` does not expand
+// declarative macros, so all five and the `CirBytes` they return were silently
+// absent from the generated header. Not a compile error and not a link error --
+// a C consumer simply had no way to read any text. Written out, because a
+// header that does not declare a function is worse than five repeated lines.
+// `every_symbol_this_crate_exports_is_declared_in_the_header` is what would
+// catch it happening again by any other route.
 
-macro_rules! text_accessor {
-    ($name:ident, $field:ident, $doc:literal) => {
-        #[doc = $doc]
-        ///
-        /// # Safety
-        /// `node` must come from `cir_snapshot_node` on a retained snapshot.
-        #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn $name(node: *const CirNode) -> CirBytes {
-            CirBytes::of(&unsafe { &*node }.$field)
-        }
-    };
+/// Canonical text bytes.
+///
+/// # Safety
+/// `node` must come from `cir_snapshot_node` on a retained snapshot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cir_node_text(node: *const Node) -> CirBytes {
+    CirBytes::of(&unsafe { &*node }.text)
 }
 
-text_accessor!(cir_node_text, text, "Canonical text bytes.");
-text_accessor!(
-    cir_node_text_map,
-    text_map,
-    "The raw-source-to-canonical-text mapping."
-);
-text_accessor!(cir_node_font, font, "Resolved font, feeding shaping.");
-text_accessor!(
-    cir_node_interaction,
-    interaction,
-    "Interaction target or destination."
-);
-text_accessor!(
-    cir_node_source_link,
-    source_link,
-    "The join key a consumer asks the frontend about. Never a coordinate."
-);
+/// The raw-source-to-canonical-text mapping.
+///
+/// # Safety
+/// `node` must come from `cir_snapshot_node` on a retained snapshot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cir_node_text_map(node: *const Node) -> CirBytes {
+    CirBytes::of(&unsafe { &*node }.text_map)
+}
+
+/// Resolved font, feeding shaping.
+///
+/// # Safety
+/// `node` must come from `cir_snapshot_node` on a retained snapshot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cir_node_font(node: *const Node) -> CirBytes {
+    CirBytes::of(&unsafe { &*node }.font)
+}
+
+/// Interaction target or destination.
+///
+/// # Safety
+/// `node` must come from `cir_snapshot_node` on a retained snapshot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cir_node_interaction(node: *const Node) -> CirBytes {
+    CirBytes::of(&unsafe { &*node }.interaction)
+}
+
+/// The join key a consumer asks the frontend about. Never a coordinate.
+///
+/// # Safety
+/// `node` must come from `cir_snapshot_node` on a retained snapshot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cir_node_source_link(node: *const Node) -> CirBytes {
+    CirBytes::of(&unsafe { &*node }.source_link)
+}
 
 /// Ordered child identities.
 ///
 /// # Safety
 /// `node` must come from `cir_snapshot_node` on a retained snapshot.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn cir_node_children(node: *const CirNode) -> CirAddresses {
+pub unsafe extern "C" fn cir_node_children(node: *const Node) -> CirAddresses {
     let n = unsafe { &*node };
     CirAddresses {
         ptr: n.children.as_ptr(),
@@ -232,7 +259,7 @@ pub unsafe extern "C" fn cir_node_children(node: *const CirNode) -> CirAddresses
 /// # Safety
 /// `node` must come from `cir_snapshot_node` on a retained snapshot.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn cir_node_resources(node: *const CirNode) -> CirResources {
+pub unsafe extern "C" fn cir_node_resources(node: *const Node) -> CirResources {
     let n = unsafe { &*node };
     CirResources {
         ptr: n.resources.as_ptr(),
@@ -246,7 +273,7 @@ pub unsafe extern "C" fn cir_node_resources(node: *const CirNode) -> CirResource
 /// # Safety
 /// `node` must come from `cir_snapshot_node` on a retained snapshot.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn cir_node_fragments(node: *const CirNode) -> CirFragments {
+pub unsafe extern "C" fn cir_node_fragments(node: *const Node) -> CirFragments {
     let n = unsafe { &*node };
     CirFragments {
         ptr: n.fragments.as_ptr(),
@@ -259,7 +286,7 @@ pub unsafe extern "C" fn cir_node_fragments(node: *const CirNode) -> CirFragment
 /// # Safety
 /// `node` must come from `cir_snapshot_node` on a retained snapshot.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn cir_node_intrinsic(node: *const CirNode) -> i64 {
+pub unsafe extern "C" fn cir_node_intrinsic(node: *const Node) -> i64 {
     unsafe { &*node }.intrinsic
 }
 
@@ -268,7 +295,7 @@ pub unsafe extern "C" fn cir_node_intrinsic(node: *const CirNode) -> i64 {
 /// # Safety
 /// `node` must come from `cir_snapshot_node` on a retained snapshot.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn cir_node_lines(node: *const CirNode) -> i64 {
+pub unsafe extern "C" fn cir_node_lines(node: *const Node) -> i64 {
     unsafe { &*node }.lines
 }
 
@@ -277,7 +304,7 @@ pub unsafe extern "C" fn cir_node_lines(node: *const CirNode) -> i64 {
 /// # Safety
 /// `node` must come from `cir_snapshot_node` on a retained snapshot.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn cir_node_paint(node: *const CirNode) -> Rgba {
+pub unsafe extern "C" fn cir_node_paint(node: *const Node) -> Rgba {
     unsafe { &*node }.paint
 }
 
@@ -286,6 +313,6 @@ pub unsafe extern "C" fn cir_node_paint(node: *const CirNode) -> Rgba {
 /// # Safety
 /// `node` must come from `cir_snapshot_node` on a retained snapshot.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn cir_node_valid(node: *const CirNode) -> bool {
+pub unsafe extern "C" fn cir_node_valid(node: *const Node) -> bool {
     unsafe { &*node }.valid
 }

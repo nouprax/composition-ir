@@ -1,0 +1,82 @@
+language = "C"
+include_guard = "COMPOSITION_IR_H"
+cpp_compat = true
+documentation = true
+documentation_style = "c99"
+tab_width = 4
+line_length = 80
+
+# A count is a `size_t` in C, not a `uintptr_t`. Both are the same width on
+# every target Rust supports, but only one of them says what the value means.
+usize_is_size_t = true
+
+# cbindgen's default set includes headers nothing here needs. Stated instead of
+# inherited, so what this file depends on is visible.
+no_includes = true
+sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
+
+header = """
+/* Composition IR — the C ABI.
+ *
+ * Generated from the Rust source; do not edit. The generator is
+ * `the_committed_header_matches_what_this_crate_exports` in
+ * packages/composition-ir-ffi/tests/header_gates.rs, and an edit made here is
+ * reverted by the next run of it.
+ *
+ * Field offsets are deliberately absent. A C compiler computes them for the
+ * target it is compiling for, which is the right answer and one no generator
+ * beats. A binding that instead reads fields by offset — Swift, Kotlin, a
+ * JavaScript DataView over wasm memory — reads abi/layout.json, which states
+ * which ABI it describes.
+ *
+ * Two validity rules a C declaration cannot express. A CirDomain, a
+ * CirRevision, and a CirId's ordinal are never zero; writing a zero produces a
+ * value the Rust side considers impossible. And every pointer returned here is
+ * borrowed from a retained handle: it is valid until that handle is released,
+ * and nothing returned here is ever freed by the caller.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */"""
+
+[parse]
+# The value types live in composition-ir, not in this crate, so a header
+# generated from this crate alone would declare functions whose parameter types
+# it never defines.
+parse_deps = true
+include = ["composition-ir"]
+
+[export]
+# Reachability from a function signature is not the same as usefulness. `Part`
+# is only ever seen through the `Parts` bitset, and a consumer that cannot name
+# `CirPart_Descendant` cannot mask the one part it most needs to.
+include = ["Part"]
+
+# The manifest's vocabulary, not the ABI's. These exist so `layout.rs` can walk
+# every variant; `abi/layout.json` publishes the same lists in the form a
+# binding generator actually consumes, and a brace-initializer macro is not it.
+exclude = ["MANIFEST_FORMAT", "ALL_SPACES", "ALL_PARTS", "ALL_RESOURCE_ROLES"]
+
+# Every type in this header is `Cir`-prefixed, because a C consumer gets one
+# global namespace and `Rect`, `Id`, and `Space` are names it will already have
+# spent. Written out per type rather than as a blanket prefix: a blanket prefix
+# also renames the types this crate already spells `Cir…`, and publishes
+# `CirCirBytes`. `every_type_the_header_declares_is_prefixed` is what keeps this
+# list from falling behind the IR.
+[export.rename]
+"Address" = "CirAddress"
+"Diff" = "CirDiff"
+"Domain" = "CirDomain"
+"Id" = "CirId"
+"Node" = "CirNode"
+"Part" = "CirPart"
+"Parts" = "CirParts"
+"Rect" = "CirRect"
+"ResourceRef" = "CirResourceRef"
+"ResourceRole" = "CirResourceRole"
+"Revision" = "CirRevision"
+"Rgba" = "CirRgba"
+"SnapshotVersion" = "CirSnapshotVersion"
+"Space" = "CirSpace"
+
+[enum]
+prefix_with_name = true
