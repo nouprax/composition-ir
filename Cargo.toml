@@ -5,6 +5,7 @@ members = [
     "packages/composition-ir-ffi",
     "conformance/frontend",
     "conformance/backend",
+    "conformance/workloads",
 ]
 
 [workspace.package]

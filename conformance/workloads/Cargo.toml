@@ -1,0 +1,17 @@
+[package]
+name = "workload-conformance"
+version.workspace = true
+description = "The three workloads that decide whether a design is right, end to end: a frontend, the IR, and all three output targets"
+edition.workspace = true
+publish = false
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+composition-ir = { path = "../../packages/composition-ir" }
+frontend-conformance = { path = "../frontend" }
+backend-conformance = { path = "../backend" }
+
+[lints]
+workspace = true

@@ -167,6 +167,25 @@ measure it directly rather than inferring it from timing.
   expanding `macro_rules!` left five exports out of the C header while every
   text comparison agreed.
 
+## Before changing the ABI or a contract boundary
+
+**Prove the shape end to end first.** A change to the C ABI, to `docs/specs/`,
+or to anything a consumer compiles against is preceded by a proof of concept
+that runs the whole chain: a frontend, the IR, and all three output targets —
+`raster` (immediate-mode, the shape a Skia consumer builds), `svg` (retained),
+and `paged` (paginated). `conformance/workloads/` is where that runs.
+
+The reason is asymmetry. A boundary is nearly free to change before a consumer
+ships against it and very expensive after, and one consumer's needs are not
+evidence about a boundary — the three targets differ precisely where a design
+tends to be wrong. This has already happened here in the other order: the
+backend contract reopened the IR contract, because building an SVG, a raster,
+and a paginated target found four things they needed that the IR did not carry.
+
+Design from what the PoC found, not from what the proposal assumed, and say
+what it found — including the parts that contradicted the proposal. A PoC whose
+findings all confirm the plan is usually a PoC that was written to.
+
 ## Failure modes already proven in this codebase
 
 These are not hypothetical. Each was written, passed review-by-inspection, and
