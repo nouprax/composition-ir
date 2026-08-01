@@ -9,6 +9,8 @@
 //! Naming follows `cir_<subject>_<verb>`, the subject being the type the call
 //! operates on or produces.
 
+pub mod layout;
+
 use std::sync::Arc;
 
 use composition_ir::{Address, Delta, Diff, Snapshot, SnapshotVersion};

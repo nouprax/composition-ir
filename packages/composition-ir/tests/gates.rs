@@ -526,11 +526,41 @@ fn every_gate_the_spec_cites_exists() {
         "/../../docs/specs/composition-ir.md"
     ))
     .expect("the contract must be readable from the suite that enforces it");
-    // the contract's rules are checked here and at the C boundary, so both
-    // suites count as resolving a citation
-    let source = concat!(
-        include_str!("gates.rs"),
-        include_str!("../../composition-ir-ffi/tests/gates.rs")
+    // The contract's rules are checked here and at the C boundary, so every
+    // suite counts as resolving a citation. Discovered rather than listed: a
+    // hardcoded list silently stops covering a suite the moment one is added,
+    // and this gate reported three real citations as missing the first time
+    // that happened -- which is the good outcome, but only because the list was
+    // short enough to notice. A longer one would have gone the other way.
+    let mut source = String::new();
+    let mut dirs = vec![std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../.."
+    ))];
+    while let Some(dir) = dirs.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path
+                    .file_name()
+                    .is_some_and(|n| n == "target" || n == ".git")
+                {
+                    continue;
+                }
+                dirs.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs")
+                && path.parent().is_some_and(|p| p.ends_with("tests"))
+            {
+                source.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+            }
+        }
+    }
+    assert!(
+        source.contains("fn every_gate_the_spec_cites_exists("),
+        "the search did not even find this file; it would resolve nothing"
     );
 
     let mut cited = Vec::new();

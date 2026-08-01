@@ -82,6 +82,9 @@ packages/                    what ships
     tests/gates.rs           the contract, executable
     tests/derive_gates.rs    the derivation contract, executable
   composition-ir-ffi/        the C ABI: opaque handles, zero-copy value types
+    abi/layout.json          the published field layout; bindings generate from it
+    src/layout.rs            generates it from the compiled types
+    tests/layout_gates.rs    fails when the ABI and that file disagree
 
 conformance/                 what proves the contracts, and never ships
   frontend/                  the frontend contract, executable

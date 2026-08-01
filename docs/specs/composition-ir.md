@@ -7,10 +7,11 @@ recorded in [`backend-contract.md`](backend-contract.md) §5. Freezing before a
 consumer existed was the error, and the rule it produced is that a claim about
 a consumer nothing has exercised is a hypothesis.
 
-Every normative rule below is checked by a gate
-in `packages/composition-ir/tests/gates.rs` or
-`packages/composition-ir-ffi/tests/gates.rs`; the gate name appears in brackets. A
-rule with no gate is not normative.
+Every normative rule below is checked by a gate in
+`packages/composition-ir/tests/gates.rs`,
+`packages/composition-ir-ffi/tests/gates.rs`, or
+`packages/composition-ir-ffi/tests/layout_gates.rs`; the gate name appears in
+brackets. A rule with no gate is not normative.
 
 Companions: [`derivation.md`](derivation.md) for engine-internal recomputation,
 [`frontend-contract.md`](frontend-contract.md) for what a frontend supplies,
@@ -316,6 +317,45 @@ handle is the only thing a caller must remember to release.
 
 Calls are named `cir_<subject>_<verb>`, the subject being the type the call
 operates on or produces.
+
+### 9.1 The layout manifest
+
+Sizes are asserted above, but a size is not a layout. Swapping two fields of a
+`#[repr(C)]` struct changes no size, and every consumer that reads by offset —
+a Swift `UnsafeBufferPointer`, a Kotlin `ByteBuffer`, a JavaScript `DataView`
+over `WebAssembly.Memory` — would go on reading at the old addresses, with no
+error anywhere. A non-Rust binding is uniquely exposed to this because it
+cannot ask the compiler where a field is.
+
+So the layout is **published as an artifact** rather than left to each binding
+to rederive. `packages/composition-ir-ffi/abi/layout.json` carries every ABI
+type's size, alignment, field offsets, enum discriminants, and the `Parts` flag
+values, generated from the compiled types. Bindings are generated from that
+file. It is committed, so a layout change shows up as a diff on it rather than
+as behaviour in the field, and it is checked against the compiler on every run.
+[`the_committed_layout_matches_the_compiled_one`]
+
+The manifest must stay complete as the ABI grows, which is how it would
+otherwise rot: a type added here that nobody thought to describe there.
+Completeness is checked against the IR's own source rather than against
+anyone's memory. [`every_abi_type_the_ir_publishes_is_in_the_manifest`]
+
+It carries two things an offset table cannot express by itself. `Domain`,
+`Revision`, and an `Id`'s ordinal are niche-optimized — zero is not a value
+they can hold, and a binding that writes one has produced something Rust
+considers impossible — so the manifest marks them. And `Parts` publishes its
+flag values outright instead of leaving every binding to rederive
+`1 << discriminant`. [`parts_flags_agree_with_part_discriminants`]
+
+**A manifest describes one ABI, and says which.** Offsets are not portable:
+where `u64` is 4-aligned — Android's `x86` ABI is the one that reaches this
+project — `Address.id` sits at 4 rather than 8 and a `Diff` is 24 bytes rather
+than 32. So each manifest carries the pointer width, `u64` alignment, and
+endianness it was generated under, a binding generator must check that block
+against its target rather than assume there is one layout, and a target whose
+ABI differs needs its own committed manifest. Regenerating over another ABI's
+manifest is refused rather than allowed, because it would leave every binding
+built for the first one reading at offsets nothing produces.
 
 ## 10. Streaming and long sessions
 
