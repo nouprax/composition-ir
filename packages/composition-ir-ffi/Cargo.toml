@@ -19,5 +19,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [dependencies]
 composition-ir = { path = "../composition-ir" }
 
+# The header generator, used by the gate that keeps `include/composition_ir.h`
+# equal to what this crate exports. A dev-dependency rather than a CLI tool
+# because a check that cannot run is a check that gets skipped: `cargo test`
+# regenerates and compares with nothing installed. `default-features = false`
+# drops cbindgen's own command-line front end, which nothing here calls.
+[dev-dependencies]
+cbindgen = { version = "0.29", default-features = false }
+
 [lints]
 workspace = true

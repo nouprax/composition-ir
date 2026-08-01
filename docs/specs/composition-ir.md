@@ -363,7 +363,11 @@ so a tuple field could only cross by being converted per record — which is the
 copy again, in the one place it would be least visible.
 
 Calls are named `cir_<subject>_<verb>`, the subject being the type the call
-operates on or produces.
+operates on or produces. Both halves are checked, and the second is the one a
+shape rule would miss: `cir_wrong_version` on a snapshot satisfies the pattern
+and names the wrong thing, so the subject is compared against the type in the
+signature rather than only counted.
+[`every_exported_call_is_named_for_its_subject`]
 
 ### 9.1 The layout manifest
 
@@ -403,6 +407,53 @@ against its target rather than assume there is one layout, and a target whose
 ABI differs needs its own committed manifest. Regenerating over another ABI's
 manifest is refused rather than allowed, because it would leave every binding
 built for the first one reading at offsets nothing produces.
+
+### 9.2 The header
+
+The manifest says where the fields are; the header is what a compiler reads.
+`packages/composition-ir-ffi/include/composition_ir.h` is **generated** from the
+Rust source by `cbindgen` and committed, so a change to the ABI arrives as a
+diff on a reviewable file rather than as behaviour in the field.
+[`the_committed_header_matches_what_this_crate_exports`]
+
+Unlike the manifest it is not per-target. A C compiler computes offsets for
+whatever it is compiling for, which is both the right answer and one no
+generator beats, so there is one header for every ABI and no target block to
+check. The two artifacts are for different consumers: a C or Swift-importing-C
+consumer includes the header, and a consumer that reads fields out of foreign
+memory by offset reads the manifest.
+
+**A generated header is checked against the library, not against its own
+source.** A missing declaration is the failure mode with no symptom — nothing
+fails to compile, nothing fails to link, and the call is merely unreachable from
+C — and it is exactly what reading the source cannot find. `cbindgen` does not
+expand declarative macros, and five accessors here were written as one: they and
+the `CirBytes` they return were absent from the header while every text
+comparison agreed. So completeness is checked against the built library's export
+table, which no spelling in the source can hide from.
+[`every_symbol_the_library_defines_is_declared_in_the_header`]
+
+That table is taken **whole**, not narrowed to what looks like this crate's.
+Keeping only the `cir_`-prefixed names would reopen the same hole one level
+down, because a macro that emits an export named anything else is invisible to
+a source scan and dropped by the filter alike. A Rust `cdylib` exports what it
+was told to and nothing more, so the whole table is the surface. Where the
+source must still be read — a signature is not in a symbol table — the two sets
+are required to be equal first, which is what makes a statement about the source
+a statement about the library.
+
+Every name the header introduces is `Cir`-prefixed. A C consumer has one global
+namespace, and `Rect`, `Id`, and `Space` are names it will already have spent.
+Enum constants count: `Font` and `Text` are global names in C exactly as a type
+is, and one generator setting decides whether they carry their enum's name.
+[`every_type_the_header_declares_is_prefixed`]
+
+Two claims about a C header cannot be made from Rust: that a C compiler accepts
+it, and that every function it declares is a symbol that exists. A translation
+unit naming the union of what the library defines and what the header declares
+settles both — the first as a compile error, the second as a link error, and the
+second is not visible by comparing text at all.
+[`a_c_consumer_compiles_against_the_header_and_links_every_symbol`]
 
 ## 10. Streaming and long sessions
 
