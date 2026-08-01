@@ -66,9 +66,44 @@ jobs:
       # proves.
       - run: cargo publish -p composition-ir --dry-run
 
+  # What a binding links. Every target here shares one ABI -- 64-bit, little
+  # endian, `u64` 8-aligned -- which is not a coincidence and not checked by
+  # eye: `layout.rs` refuses at compile time to build for an ABI that
+  # `abi/layout.json` does not describe, so a target needing its own manifest
+  # cannot silently join this list. Android's `x86` ABI is the one that will
+  # hit it.
+  bundle:
+    name: ${{ matrix.target }}
+    needs: gates
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, runner: macos-latest }
+          - { target: x86_64-apple-darwin, runner: macos-latest }
+          - { target: aarch64-apple-ios, runner: macos-latest }
+          - { target: aarch64-apple-ios-sim, runner: macos-latest }
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-latest }
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: .github/scripts/bundle.sh ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
   publish:
     name: publish to crates.io
-    needs: gates
+    # Also on the bundles: publishing to crates.io cannot be undone, only
+    # yanked, so nothing irreversible happens until the artifacts a consumer
+    # will look for are known to build.
+    needs: [gates, bundle]
     runs-on: ubuntu-latest
     environment: crates-io
     permissions:
@@ -96,3 +131,43 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish -p composition-ir
+
+  # The GitHub release is what a non-Rust consumer downloads; crates.io serves
+  # only the Rust dependent. It is created last so a release never exists
+  # advertising a version that failed to publish.
+  release:
+    name: attach the artifacts
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-*
+          path: dist
+          merge-multiple: true
+
+      # A download that produced nothing would otherwise publish an empty
+      # release, which looks like a release.
+      - name: Checksums over what actually arrived
+        run: |
+          set -euo pipefail
+          cd dist
+          count=$(ls -1 *.tar.gz 2>/dev/null | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no bundles were downloaded; the release would be empty"
+            exit 1
+          fi
+          sha256sum *.tar.gz | tee SHA256SUMS
+          echo "attaching ${count} bundles"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            dist/*.tar.gz dist/SHA256SUMS

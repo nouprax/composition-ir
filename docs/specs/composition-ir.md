@@ -408,6 +408,14 @@ ABI differs needs its own committed manifest. Regenerating over another ABI's
 manifest is refused rather than allowed, because it would leave every binding
 built for the first one reading at offsets nothing produces.
 
+Building for such a target is refused too, and it has to be refused **while
+compiling**: a cross-compiled release job runs no test on the machine the
+library is for, so a check that runs is a check that was never going to see it.
+The manifest's ABI is therefore also a constant the crate compares against the
+target it is being built for, and a mismatch is a compile error rather than a
+library shipped against another ABI's offsets.
+[`the_manifest_and_the_build_guard_name_one_abi`]
+
 ### 9.2 The header
 
 The manifest says where the fields are; the header is what a compiler reads.

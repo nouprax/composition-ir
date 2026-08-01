@@ -122,6 +122,13 @@ foreign memory by offset reads, and it states which ABI it describes. Both are
 generated and committed, so a change to either is a diff on a reviewable file
 rather than behaviour discovered in the field.
 
+Each tagged release attaches one archive per target — the static and shared
+libraries, the header, and the manifest — for macOS, iOS, the iOS simulator,
+and Linux, all on arm64 and x86_64 where both exist. The manifest in an archive
+is the right one for the library beside it by construction: the crate refuses at
+compile time to build for an ABI it does not describe, so a target that would
+need its own manifest cannot be added to the release matrix without one.
+
 ## License
 
 Apache-2.0.
