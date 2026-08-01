@@ -35,13 +35,45 @@ fn generate() -> String {
     String::from_utf8(out).expect("cbindgen emits UTF-8")
 }
 
+/// One export as its source declares it: which file, its name, and the type its
+/// name should be naming.
+struct Export {
+    file: String,
+    name: String,
+    /// The first parameter's type, or the return type when it takes none --
+    /// normalized to the word §9 expects as the subject. `*const CirSnapshot`
+    /// and `*const Node` both reduce by the same rule, so this is a rule rather
+    /// than a table that would need extending per call.
+    subject: String,
+}
+
+/// The type a call is *about*, spelled the way §9 spells a subject.
+fn subject_of(ty: &str) -> String {
+    ty.trim()
+        .trim_start_matches("*const ")
+        .trim_start_matches("*mut ")
+        .trim_start_matches('&')
+        .trim()
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect::<String>()
+        .trim_start_matches("Cir")
+        .to_lowercase()
+}
+
 /// Every `extern "C"` symbol this crate exports, read out of its own source.
 ///
 /// Read rather than listed, for the same reason
 /// `every_abi_type_the_ir_publishes_is_in_the_manifest` reads the IR's: a list
 /// covers what its author remembered, and the failure this guards against is a
 /// *new* export that nobody thought to add to the header.
-fn exported_symbols() -> Vec<(String, String)> {
+///
+/// A source scan cannot see an export a macro generates -- that is the whole
+/// finding this file exists for -- so nothing here may be trusted as the export
+/// set on its own. `every_exported_call_is_named_for_its_subject` first requires
+/// this to equal the library's own table, and only then reads signatures out of
+/// it, which is the one thing the table does not carry.
+fn exported_symbols() -> Vec<Export> {
     let src = Path::new(CRATE_DIR).join("src");
     let mut files: Vec<PathBuf> = std::fs::read_dir(&src)
         .unwrap_or_else(|e| {
@@ -81,13 +113,32 @@ fn exported_symbols() -> Vec<(String, String)> {
             if chunk[..at].contains("\n\n") {
                 continue;
             }
-            let name: String = chunk[at + "extern \"C\" fn ".len()..]
+            let decl = &chunk[at + "extern \"C\" fn ".len()..];
+            let name: String = decl
                 .chars()
                 .take_while(|c| c.is_alphanumeric() || *c == '_')
                 .collect();
-            if !name.is_empty() {
-                symbols.push((file.clone(), name));
+            if name.is_empty() {
+                continue;
             }
+            let Some(open) = decl.find('(') else { continue };
+            let Some(close) = decl[open..].find(')').map(|i| open + i) else {
+                continue;
+            };
+            let params = decl[open + 1..close].trim();
+            let subject = match params.split(',').next().unwrap_or_default() {
+                // No parameters: the subject is what the call produces.
+                "" => decl[close + 1..]
+                    .split_once("->")
+                    .map(|(_, ret)| subject_of(ret))
+                    .unwrap_or_default(),
+                first => subject_of(first.split_once(':').map_or(first, |(_, ty)| ty)),
+            };
+            symbols.push(Export {
+                file: file.clone(),
+                name,
+                subject,
+            });
         }
     }
     symbols
@@ -155,8 +206,24 @@ fn declared_names(header: &str) -> Vec<String> {
         (!name.is_empty()).then_some(name)
     }
     let mut names = Vec::new();
+    let mut in_enum = false;
     for line in header.lines() {
         let line = line.trim_end();
+        // An enumerator is a global name in C, not a member scoped to its enum,
+        // so `CirSpace_Node` collides exactly as a type would. Recording only
+        // the enum's own name left the constants unchecked, and the thing that
+        // keeps them prefixed is one `cbindgen` setting: turning off
+        // `prefix_with_name` puts `Node`, `Text`, and `Font` into the global
+        // namespace while every type in the file is still `Cir…`.
+        if in_enum {
+            let t = line.trim_start();
+            if t.starts_with('}') {
+                in_enum = false;
+            } else if let Some(name) = ident(t).filter(|_| !t.starts_with('#')) {
+                names.push(name);
+            }
+            continue;
+        }
         let name = if let Some(rest) = line.strip_prefix("typedef struct ") {
             // `typedef struct X X;` and `typedef struct X {` alike: the tag is
             // the name, and for the opaque form it is also the alias.
@@ -172,6 +239,8 @@ fn declared_names(header: &str) -> Vec<String> {
         } else if let Some(rest) = line.strip_prefix("} ") {
             ident(rest)
         } else if let Some(rest) = line.strip_prefix("enum ") {
+            // …and everything up to the closing brace is an enumerator.
+            in_enum = true;
             ident(rest)
         } else if let Some(rest) = line.strip_prefix("#define ") {
             ident(rest)
@@ -272,7 +341,7 @@ fn build_libraries() -> (PathBuf, PathBuf, Vec<String>) {
     (archive, shared, native_libs)
 }
 
-/// Every `cir_…` function the built library actually defines.
+/// Every function the built library actually exports.
 ///
 /// The library, not the source text. Reading the source is what a scan would
 /// naturally do and is exactly what fails here: an export generated by a
@@ -281,9 +350,16 @@ fn build_libraries() -> (PathBuf, PathBuf, Vec<String>) {
 /// missing five calls. That is the bug this file was written for, and a check
 /// that cannot see it is decoration.
 ///
+/// **Unfiltered.** Keeping only the `cir_`-prefixed names would have reopened
+/// the same hole one level down: a macro emitting an export named anything else
+/// is invisible to the source scan *and* dropped here, so every gate passes
+/// while the library exports a function the header has never heard of. A Rust
+/// `cdylib` exports what it was told to and nothing more, so the whole table is
+/// this crate's surface and can be checked as such.
+///
 /// The shared library rather than the archive, for two reasons. Its export
-/// table *is* the ABI surface -- an archive also carries every internal symbol
-/// of everything statically linked into it. And an archive still holds
+/// table *is* that surface -- an archive also carries every internal symbol of
+/// everything statically linked into it. And an archive still holds
 /// `compiler_builtins` members as LLVM bitcode, which the host `nm` is a
 /// different LLVM version from and refuses outright.
 fn defined_symbols(library: &Path) -> Vec<String> {
@@ -307,7 +383,6 @@ fn defined_symbols(library: &Path) -> Vec<String> {
             let name = cols.nth_back(0)?;
             (cols.next_back()? == "T").then(|| name.strip_prefix('_').unwrap_or(name).to_owned())
         })
-        .filter(|name| name.starts_with("cir_"))
         .collect();
     names.sort();
     names.dedup();
@@ -358,37 +433,75 @@ fn every_symbol_the_library_defines_is_declared_in_the_header() {
     let defined = defined_symbols(&shared);
     assert!(
         defined.len() >= 25,
-        "the archive defines only {} cir_ symbols; reading it stopped working: {defined:?}",
+        "the library exports only {} symbols; reading its table stopped working: {defined:?}",
         defined.len()
     );
     for name in &defined {
         assert!(
             declares(COMMITTED_HEADER, name),
-            "the library defines `{name}` and the header does not declare it, \
+            "the library exports `{name}` and the header does not declare it, \
              so no C consumer can call it"
         );
     }
 }
 
-/// The naming rule from §9 -- and it is load-bearing rather than cosmetic.
-/// `every_symbol_the_library_defines_is_declared_in_the_header` finds this
-/// crate's exports in an archive that also holds all of `std` by taking the
-/// `cir_` prefix as the boundary. An export named anything else is one that
-/// check would not look at.
+/// The naming rule from §9, in both halves: `cir_<subject>_<verb>`, and the
+/// subject being the type the call operates on or produces. Shape alone would
+/// pass `cir_wrong_version` on a snapshot, which is the rule stated and not
+/// enforced.
+///
+/// Signatures only exist in the source, and the source is the thing that cannot
+/// see a macro-generated export -- so the two sets are required to be equal
+/// first. That equality is what makes everything read out of the source below
+/// true of the library, and it is the check a macro reintroduced here would
+/// fail: the export appears in the table and not in the scan.
 #[test]
 fn every_exported_call_is_named_for_its_subject() {
-    let symbols = exported_symbols();
+    let (_, shared, _) = build_libraries();
+    let exported = defined_symbols(&shared);
+    let scanned = exported_symbols();
+
+    let mut names: Vec<&str> = scanned.iter().map(|e| e.name.as_str()).collect();
+    names.sort_unstable();
+    let missing: Vec<&String> = exported
+        .iter()
+        .filter(|n| names.binary_search(&n.as_str()).is_err())
+        .collect();
     assert!(
-        symbols.len() >= 25,
-        "found only {} exports by reading the source; the scan stopped working",
-        symbols.len()
+        missing.is_empty(),
+        "the library exports {missing:?}, which no `extern \"C\" fn` in the source declares. \
+         A macro that generates an export is invisible to this scan and to cbindgen alike; \
+         write it out longhand."
     );
-    for (file, name) in &symbols {
+    assert_eq!(
+        names.len(),
+        exported.len(),
+        "the source declares {} exports and the library has {}; one of the two is being \
+         misread, and every check below reads the source",
+        names.len(),
+        exported.len()
+    );
+    assert!(
+        exported.len() >= 25,
+        "only {} exports; the scans that feed this stopped working",
+        exported.len()
+    );
+
+    for Export {
+        file,
+        name,
+        subject,
+    } in &scanned
+    {
         let parts: Vec<&str> = name.split('_').collect();
         assert!(
             parts.len() >= 3 && parts[0] == "cir" && parts[1..].iter().all(|p| !p.is_empty()),
-            "{file}: `{name}` is exported but is not cir_<subject>_<verb>; \
-             the completeness check finds exports by that prefix and would not see it"
+            "{file}: `{name}` is exported but is not cir_<subject>_<verb>"
+        );
+        assert_eq!(
+            parts[1], subject,
+            "{file}: `{name}` names `{}` as its subject, but the call is about a `{subject}`",
+            parts[1]
         );
     }
 }

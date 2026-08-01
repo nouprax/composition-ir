@@ -363,10 +363,10 @@ so a tuple field could only cross by being converted per record — which is the
 copy again, in the one place it would be least visible.
 
 Calls are named `cir_<subject>_<verb>`, the subject being the type the call
-operates on or produces. The rule is load-bearing rather than cosmetic: §9.2
-finds this crate's exports in a library that also holds all of `std` by taking
-that prefix as the boundary, so an export named anything else is one no
-completeness check looks at.
+operates on or produces. Both halves are checked, and the second is the one a
+shape rule would miss: `cir_wrong_version` on a snapshot satisfies the pattern
+and names the wrong thing, so the subject is compared against the type in the
+signature rather than only counted.
 [`every_exported_call_is_named_for_its_subject`]
 
 ### 9.1 The layout manifest
@@ -429,12 +429,23 @@ fails to compile, nothing fails to link, and the call is merely unreachable from
 C — and it is exactly what reading the source cannot find. `cbindgen` does not
 expand declarative macros, and five accessors here were written as one: they and
 the `CirBytes` they return were absent from the header while every text
-comparison agreed. So completeness is checked against the built library's symbol
+comparison agreed. So completeness is checked against the built library's export
 table, which no spelling in the source can hide from.
 [`every_symbol_the_library_defines_is_declared_in_the_header`]
 
+That table is taken **whole**, not narrowed to what looks like this crate's.
+Keeping only the `cir_`-prefixed names would reopen the same hole one level
+down, because a macro that emits an export named anything else is invisible to
+a source scan and dropped by the filter alike. A Rust `cdylib` exports what it
+was told to and nothing more, so the whole table is the surface. Where the
+source must still be read — a signature is not in a symbol table — the two sets
+are required to be equal first, which is what makes a statement about the source
+a statement about the library.
+
 Every name the header introduces is `Cir`-prefixed. A C consumer has one global
 namespace, and `Rect`, `Id`, and `Space` are names it will already have spent.
+Enum constants count: `Font` and `Text` are global names in C exactly as a type
+is, and one generator setting decides whether they carry their enum's name.
 [`every_type_the_header_declares_is_prefixed`]
 
 Two claims about a C header cannot be made from Rust: that a C compiler accepts
