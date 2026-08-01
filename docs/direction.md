@@ -105,8 +105,8 @@ consumers write the same thing differently, they disagree about what the IR
 | | ours |
 |---|---|
 | diff → dirty set, with `Descendant` bubbling | yes — the delta *is* the dirty set: `diffs_between` bubbles `Descendant` in, and `Delta::as_slice` hands over the raw slice for a consumer fusing it into its own diffing |
-| point → address hit test | yes — **does not exist yet** |
-| visible-set culling | yes — **does not exist yet**; `Placement` resolves one address at a time and has no viewport query |
+| point → address hit test | yes — **does not exist yet**; and it returns every hit, because the PoC found no order in the IR that covers the set it would have to rank |
+| visible-set culling | the consumer's, for now — a rectangle scan costs the same written by hand as it would inside the IR, so this is a question about an index rather than a call |
 | caret offset → address | the frontend's, and the contract should require it — **does not exist yet** |
 | UTF-8 ↔ UTF-16 offset profiles | the frontend's — **does not exist yet** |
 | math layout | `tex-core`'s |
@@ -217,14 +217,66 @@ absent, and a heredoc inside a process substitution is a *parse* error that
 leaves the script exiting 0 having done nothing. Anything a release runs on a
 macOS runner is written for 3.2 and run under `/bin/bash` before it is believed.
 
+## What the SBS query PoC found
+
+`conformance/workloads/` runs a frontend, the IR, and all three targets over one
+document, with each proposed query written the way a consumer must write it
+today. Seven findings, and they change the proposal rather than confirm it.
+
+**`address_at(point)` cannot return one address.** Two records overlap and
+something must rank them. The IR does have an order — `children` is ordered, and
+a painter's algorithm over a tree walk is the usual reading — but §9 says roots
+are entry points and not the census, and the live set is deliberately larger
+than a `children` walk reaches. In the PoC document one record of six is
+reachable from the roots, and the two that need ranking are not among them.
+Returning one address would be inventing a rule. It returns every hit, and the
+consumer with a rule applies it: `svg` takes the DOM's answer, `raster` has no
+scene graph and must be told.
+
+**A point does not name a page.** `Placement::rect` gives one box in one
+coordinate space, and the record straddling the break is on two pages with one
+box. A hit test on page 0 and the same hit test on page 1 are indistinguishable.
+Whatever the query becomes, a paginated consumer needs the fragment in the
+question or in the answer.
+
+**Fragment membership is not derivable from geometry, and this was the finding
+that contradicted the proposal.** A rectangle over page 1 was expected to differ
+from the set of records on page 1 and did not — in a flowing document the two
+are the same set. They separate on a running header: on every page, placed once,
+so it is on page 1 while its box is not. "What is on page N" is therefore
+already answered by `fragments` and needs no new API, and a viewport query
+answers only "what is inside this rectangle". Two questions, not one.
+
+**The viewport query is the right shape and the wrong cost.** Both `svg` and
+`raster` consume the set directly. Computing it scans every record and resolves
+every rect, because nothing is indexed by geometry — so a consumer writing it
+by hand pays exactly what the IR would. **Putting it in the IR is only worth
+anything if it is indexed**, which is a data-structure change and not a call.
+
+**Culling must not replace the delta.** An edit to an off-screen record still
+publishes a diff, which is correct; a consumer that filtered its input by the
+visible set would hold a stale record the moment it scrolled. Whatever ships has
+to say so.
+
+**The frontend inverse works and nothing requires it.** `source_link` round
+trips today. The caret-to-record direction is answerable only because the
+fixture happens to keep a span per node, which `frontend-contract.md` does not
+ask for.
+
+**UTF-8 and UTF-16 offsets agree until the first non-ASCII character** and
+diverge after it, so the difference is not a constant and cannot be cached as
+one. Converting walks the source from the start, which an editor repeats per
+caret move.
+
 ## Next, in order
 
-1. **The queries the SBS workloads need**, which are the four "does not exist
-   yet" rows above: `address_at(point)`, a viewport query over `Placement` for
-   visible-set culling, the frontend's inverse `offset → address`, and an
-   encoding profile so a UTF-16 host is not rescanning the source per caret
-   move. The last two are `frontend-contract.md` changes and are cheap now,
-   expensive once a frontend ships against it.
+1. **The queries the SBS workloads need**, redesigned from the findings above:
+   a hit test returning every hit rather than one, fragment-qualified; the
+   frontend's inverse `offset → address`; and an encoding profile. Visible-set
+   culling is *not* in this list as a call — the PoC showed it buys a consumer
+   nothing without an index, so it is a data-structure question and is deferred
+   until one is worth building. The last two are `frontend-contract.md` changes
+   and are cheap now, expensive once a frontend ships against it.
 2. **The first binding**, Swift or KMP, generated from the manifest.
 3. **`tex-core` onto composition-ir**, staged, starting with the downstream
    that was going to be rewritten anyway. The math engine goes last.

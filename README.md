@@ -96,6 +96,10 @@ conformance/                 what proves the contracts, and never ships
   backend/                   three output targets and their gates
     src/{svg,raster,paged}.rs  retained, immediate-mode, and paginated
     tests/gates.rs           what a backend may read, and what it costs
+  workloads/                 the whole chain, for trying a boundary before it is frozen
+    src/document.rs          one document that stresses pages, overlap, and non-ASCII
+    src/candidate.rs         proposed queries, written as a consumer would today
+    tests/poc.rs             what running them through all three targets showed
 
 docs/specs/                  the contracts, normative
 docs/direction.md            what was decided and why, what is next
