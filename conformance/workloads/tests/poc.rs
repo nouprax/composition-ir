@@ -10,10 +10,10 @@ use composition_ir::{Domain, Node, Part, Rect, Snapshot};
 
 use backend_conformance::{paged::Paged, raster::Raster, svg::Svg};
 use workload_conformance::candidate::{
-    Point, address_for_offset, addresses_at, byte_offset_of, on_fragment, utf16_offset_of,
-    visible_set,
+    Point, addresses_at, addresses_for_offset, byte_offset_of, on_fragment, utf16_offset_of,
+    visible_set, visible_set_single_pass,
 };
-use workload_conformance::document::{PAGE_HEIGHT, VIEWPORT, address, ast, snapshot};
+use workload_conformance::document::{PAGE_HEIGHT, VIEWPORT, address, ast, layout, snapshot};
 
 fn dom() -> Domain {
     Domain(std::num::NonZeroU64::new(7).unwrap())
@@ -131,24 +131,49 @@ fn a_point_in_an_overlap_has_two_answers_and_no_order_that_covers_them() {
     );
 }
 
-/// **Finding 3: culling works, and costs the whole document to compute.**
+/// **Finding 3: culling is the right shape, and a consumer cannot compute it as
+/// cheaply as the IR could.**
 ///
-/// The viewport holds four of six records, and both `svg` and `raster` can use
-/// that set directly -- so the query's *shape* is right for them. What it costs
-/// is the problem: every record is scanned and every rect resolved, per frame,
-/// because nothing in the IR is indexed by geometry.
+/// This started as "the query buys a consumer nothing", on a measurement that
+/// counted calls to `Placement::rect` as if each were `O(1)`. It is not: it
+/// scans the placement's boxes for a match and then walks every translation's
+/// cover list. A loop calling it once per live address is quadratic in the
+/// document.
+///
+/// A consumer has no way out of that loop, because `Placement` exposes `len`
+/// and `rect` and nothing that iterates. The side that owns the vector resolves
+/// the same answer in one pass. So the query is not a convenience wrapper over
+/// what a consumer can already write -- it is asymptotically cheaper, before any
+/// index is built at all.
 #[test]
-fn a_viewport_query_is_the_right_shape_and_the_wrong_cost() {
+fn culling_costs_a_consumer_more_than_it_would_cost_the_ir() {
     let s = doc();
-    let (visible, cost) = visible_set(&s, VIEWPORT);
+    let (visible, consumer) = visible_set(&s, VIEWPORT);
 
     assert_eq!(visible.len(), 4, "four of six records are on screen");
-    assert_eq!(
-        cost.records_scanned,
-        s.len(),
-        "culling scanned the whole document to find them"
+    assert_eq!(consumer.records_scanned, s.len());
+    assert_eq!(consumer.rect_lookups, s.len());
+    assert!(
+        consumer.box_comparisons > consumer.rect_lookups,
+        "each lookup is a scan, so the work is superlinear in the document: \
+         {} comparisons for {} lookups",
+        consumer.box_comparisons,
+        consumer.rect_lookups
     );
-    assert_eq!(cost.rects_resolved, s.len());
+
+    // The same answer, computed once over the placement the IR owns.
+    let placed: Vec<_> = layout()
+        .iter()
+        .map(|p| (address(dom(), p.id), p.rect))
+        .collect();
+    let (same, inside) = visible_set_single_pass(&placed, VIEWPORT);
+    assert_eq!(same, visible, "the two agree on the answer");
+    assert!(
+        inside.box_comparisons < consumer.box_comparisons,
+        "and the one that can see the placement does strictly less work: {} vs {}",
+        inside.box_comparisons,
+        consumer.box_comparisons
+    );
 
     // Both viewport-shaped targets can consume it as-is.
     let (raster, _) = Raster::render(&s);
@@ -238,15 +263,21 @@ fn a_page_is_a_membership_list_and_not_a_region() {
     assert_ne!(by_rect, on_page_1);
 }
 
-/// **Finding 5: select → editor works today, and only in one direction.**
+/// **Finding 5: the inverse has the same shape as the hit test -- one caret is
+/// several nodes -- and unlike the hit test, the frontend can rank them.**
 ///
-/// Forward is already carried: a record's `source_link` is a stable join key,
-/// the frontend owns the source, and the round trip lands on the right node.
-/// The inverse -- a caret offset back to the record -- is the frontend's, is
-/// not required by `frontend-contract.md`, and the fixture happens to be able
-/// to answer it only because its nodes keep spans.
+/// Forward is already carried: `source_link` is a stable join key and the round
+/// trip lands on the right node. The inverse is the frontend's, and nothing in
+/// `frontend-contract.md` requires it.
+///
+/// A caret inside the inline formula is inside the formula *and* inside the
+/// paragraph containing it, which is the ordinary Markdown shape and one of the
+/// three workloads. So `offset → address` is no more singular than
+/// `point → address`. The difference is that the frontend has a tree and can
+/// order the answers by it, where the IR has no order covering the set it would
+/// have to rank -- so a contract may require an order here, and must say which.
 #[test]
-fn the_join_key_round_trips_but_the_contract_only_requires_one_direction() {
+fn one_caret_is_several_nodes_and_the_frontend_is_what_can_rank_them() {
     let s = doc();
     let ast = ast();
 
@@ -254,15 +285,27 @@ fn the_join_key_round_trips_but_the_contract_only_requires_one_direction() {
     let clicked = address(dom(), 3);
     let link = s.get(clicked).unwrap().source_link.clone();
     assert_eq!(link, "md:3");
-    let node = ast
+    let paragraph = ast
         .nodes
         .iter()
         .find(|n| format!("md:{}", n.id) == link)
         .expect("the join key names a live node");
 
-    // Caret -> record, which is the direction nothing requires.
-    let caret = node.span.0 + 1;
-    assert_eq!(address_for_offset(&ast, caret), Some(3));
+    // A caret in the paragraph's prose is in the paragraph alone.
+    let in_prose = paragraph.span.0 + 1;
+    assert_eq!(addresses_for_offset(&ast, in_prose), vec![3]);
+
+    // A caret in the inline formula is in two nodes, innermost first.
+    let formula = ast.nodes.iter().find(|n| n.id == 4).unwrap();
+    assert!(
+        formula.span.0 > paragraph.span.0 && formula.span.1 <= paragraph.span.1,
+        "the fixture nests the formula inside the paragraph"
+    );
+    assert_eq!(
+        addresses_for_offset(&ast, formula.span.0 + 1),
+        vec![4, 3],
+        "a singular answer here would be whichever the frontend happened to list first"
+    );
 
     // And it is answerable only because the frontend kept a span per node. The
     // IR carries no offset, by design -- a coordinate on a record would make
@@ -286,12 +329,12 @@ fn utf8_and_utf16_offsets_diverge_and_converting_walks_the_source() {
     let third = ast.nodes.iter().find(|n| n.id == 3).unwrap();
 
     // Up to the first non-ASCII byte the two agree...
-    let (units, _) = utf16_offset_of(&ast.source, third.span.0);
+    let (units, _) = utf16_offset_of(&ast.source, third.span.0).expect("a scalar boundary");
     assert_eq!(units, third.span.0, "ASCII prefix, so far identical");
 
     // ...and after it they do not.
     let after = third.span.1;
-    let (units_after, cost) = utf16_offset_of(&ast.source, after);
+    let (units_after, cost) = utf16_offset_of(&ast.source, after).expect("a scalar boundary");
     assert!(
         units_after < after,
         "each of the four multi-byte characters is three UTF-8 bytes and one UTF-16 unit"
@@ -301,48 +344,141 @@ fn utf8_and_utf16_offsets_diverge_and_converting_walks_the_source() {
         "the conversion walked the source from the start"
     );
 
-    // The inverse agrees, so the profile is a mapping rather than an estimate.
-    let (back, _) = byte_offset_of(&ast.source, units_after);
+    // On boundaries the two are inverses.
+    let (back, _) = byte_offset_of(&ast.source, units_after).expect("a scalar boundary");
     assert_eq!(back, after);
 }
 
-/// **Finding 7: an edit's repaint is already proportional; culling does not
-/// make it less so.**
+/// **Finding 7: not every offset has an image in the other encoding, and a
+/// profile that rounds silently moves the caret.**
 ///
-/// The reason to be careful about adding a viewport query: the delta is already
-/// the dirty set, and the raster target already repaints only what it names. A
-/// culling query must not become a second path that a consumer uses *instead*
-/// of the delta, or an edit off screen stops being observed at all.
+/// Both encodings can name a position inside one character: a byte offset can
+/// land inside a multi-byte UTF-8 sequence, and a UTF-16 offset can land
+/// between the surrogate halves of a supplementary-plane character. Neither has
+/// an image in the other.
+///
+/// The first version of these helpers rounded forward without saying so, which
+/// made the round trip above look like an identity when it was one only on
+/// boundaries -- `1` came back as `2`. So the profile has a decision to make
+/// that is not about performance: reject, or round and say in which direction.
+/// It has to be stated at the boundary, because a consumer cannot tell a
+/// rounded answer from an exact one.
 #[test]
-fn culling_narrows_a_repaint_without_replacing_the_delta() {
+fn an_offset_inside_a_character_has_no_image_in_the_other_encoding() {
+    let source = "😀x";
+
+    // The emoji is one scalar: four UTF-8 bytes and two UTF-16 units.
+    assert_eq!(source.chars().next().unwrap().len_utf8(), 4);
+    assert_eq!(source.chars().next().unwrap().len_utf16(), 2);
+
+    // Between the surrogate halves.
+    let split = byte_offset_of(source, 1);
+    assert_eq!(
+        split.unwrap_err().previous_boundary,
+        0,
+        "UTF-16 offset 1 is inside the pair, and the boundary before it is 0"
+    );
+
+    // And inside the UTF-8 sequence.
+    let mid = utf16_offset_of(source, 2);
+    assert_eq!(mid.unwrap_err().previous_boundary, 0);
+
+    // The boundaries either side do convert, so this is a hole in the mapping
+    // rather than a failure of it.
+    assert_eq!(byte_offset_of(source, 0).unwrap().0, 0);
+    assert_eq!(byte_offset_of(source, 2).unwrap().0, 4);
+    assert_eq!(utf16_offset_of(source, 4).unwrap().0, 2);
+}
+
+/// **Finding 8: whether culling may replace the delta depends on what the
+/// consumer keeps, and only one of the two shapes is at risk.**
+///
+/// The first reading of this was that a consumer must never filter its delta by
+/// the visible set. That is too strong. §1 makes the snapshot the complete
+/// result and a consumer may ignore every delta, so a consumer that materializes
+/// only the viewport is safe: it drops the off-screen diff and repopulates from
+/// the current snapshot when the record scrolls in.
+///
+/// The one that goes stale is the consumer that **retains** what it has scrolled
+/// past and filters its updates anyway -- it keeps the old record and never
+/// hears about the change. Both are built here, because the difference is the
+/// whole rule and asserting that the producer emitted a diff does not show it.
+#[test]
+fn filtering_a_delta_by_the_visible_set_is_safe_only_if_nothing_off_screen_is_retained() {
     let s = doc();
+
+    // A paint-only edit to a record on screen: repaint is proportional.
     let (mut raster, _) = Raster::render(&s);
-
-    // A paint-only edit to a record that is on screen.
-    let visible_target = address(dom(), 2);
     let mut edit = s.edit();
-    edit.update(visible_target, |n| n.paint.r = 0xff);
+    edit.update(address(dom(), 2), |n| n.paint.r = 0xff);
     let commit = edit.commit();
-
     let (work, region) = raster.repaint(&commit.snapshot, &commit.delta);
     assert_eq!(work.emitted, 1, "one record repainted, not six");
     assert_eq!(work.relaid_out, 0);
     assert!(!region.is_empty());
-    assert_eq!(commit.delta.diffs.len(), 1);
     assert!(commit.delta.diffs[0].parts.contains(Part::Paint));
 
-    // The same edit to a record *outside* the viewport still publishes a diff.
-    // A consumer that filtered its input by the visible set would drop it and
-    // hold a stale record the moment it scrolled.
-    let (visible, _) = visible_set(&commit.snapshot, VIEWPORT);
+    // Now an edit to a record nobody can see. The IR publishes it either way.
+    let s = commit.snapshot;
+    let (visible, _) = visible_set(&s, VIEWPORT);
     let off_screen = address(dom(), 6);
     assert!(!visible.contains(&off_screen));
-    let mut edit = commit.snapshot.edit();
+    let mut edit = s.edit();
     edit.update(off_screen, |n| n.paint.b = 0xff);
     let commit = edit.commit();
+    assert_eq!(commit.delta.diffs.len(), 1);
+
+    // A consumer that retains the whole document and filters by the visible set
+    // keeps the record it already had, and it is now wrong.
+    let mut retained = Raster::render(&s).0;
+    let filtered: Vec<_> = commit
+        .delta
+        .diffs
+        .iter()
+        .filter(|d| visible.contains(&d.address))
+        .copied()
+        .collect();
+    assert!(filtered.is_empty(), "the only diff was off screen");
+    let stale = retained
+        .ops
+        .iter()
+        .find(|o| o.address == off_screen)
+        .expect("it retained the off-screen record")
+        .fill;
+    let current = commit.snapshot.get(off_screen).unwrap().paint;
+    assert_ne!(stale, current, "and what it retained is stale");
+
+    // A consumer that keeps only the viewport is not exposed to that at all: it
+    // has nothing to go stale, and rebuilds from the snapshot on scroll.
+    let scrolled = Rect {
+        x: 0,
+        y: 120,
+        width: 200,
+        height: 60,
+    };
+    let (now_visible, _) = visible_set(&commit.snapshot, scrolled);
+    assert!(now_visible.contains(&off_screen));
+    let rebuilt = Raster::render(&commit.snapshot).0;
     assert_eq!(
-        commit.delta.diffs.len(),
-        1,
-        "the IR publishes it whether or not anyone can see it, which is correct"
+        rebuilt
+            .ops
+            .iter()
+            .find(|o| o.address == off_screen)
+            .unwrap()
+            .fill,
+        current,
+        "materialized from the snapshot, it is current without ever seeing the diff"
+    );
+
+    // The retained consumer is only saved by not filtering.
+    retained.repaint(&commit.snapshot, &commit.delta);
+    assert_eq!(
+        retained
+            .ops
+            .iter()
+            .find(|o| o.address == off_screen)
+            .unwrap()
+            .fill,
+        current
     );
 }

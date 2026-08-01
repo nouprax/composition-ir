@@ -53,32 +53,58 @@ pub struct Placed {
 /// The fixture AST, with a byte span per node in the frontend's own source.
 ///
 /// Built by hand rather than through `MdSession` so the source can carry
-/// multi-byte text at a known offset; the identities and the shape are the
-/// fixture's own.
+/// multi-byte text at a known offset and **nested spans**; the identities and
+/// the shape are the fixture's own.
+///
+/// The nesting is not decoration. A formula inside a paragraph is one of the
+/// three workloads, and it means a caret in the formula is inside two nodes at
+/// once. A flat fixture cannot show that, and `frontend-contract.md` constrains
+/// neither AST shape nor node inventory -- so a proposal that assumed one
+/// answer per offset would have been justified by a document that happened not
+/// to nest.
 pub fn ast() -> MdAst {
-    let bodies = [
-        (Kind::Heading, "Title"),
-        (Kind::Para, "first paragraph"),
-        // Non-ASCII, and deliberately not at the start: a UTF-16 host's offsets
-        // agree with the frontend's up to here and diverge after.
-        (Kind::Para, "第二段落 with tail"),
-        (Kind::Formula, "$x^2$"),
-        (Kind::Para, "spans the page break"),
-        (Kind::Para, "last paragraph"),
-    ];
     let mut nodes = Vec::new();
     let mut source = String::new();
-    for (i, (kind, text)) in bodies.iter().enumerate() {
+
+    let line = |id: u64, kind: Kind, text: &str, nodes: &mut Vec<MdNode>, source: &mut String| {
         let start = source.len();
         source.push_str(text);
         source.push('\n');
         nodes.push(MdNode {
-            id: i as u64 + 1,
-            kind: kind.clone(),
-            text: (*text).to_string(),
+            id,
+            kind,
+            text: text.to_string(),
             span: (start, start + text.len()),
         });
-    }
+        start
+    };
+
+    line(1, Kind::Heading, "Title", &mut nodes, &mut source);
+    line(2, Kind::Para, "first paragraph", &mut nodes, &mut source);
+
+    // Non-ASCII, and deliberately not at the start: a UTF-16 host's offsets
+    // agree with the frontend's up to here and diverge after. The formula is
+    // inline, so record 4's span falls inside record 3's.
+    let para = "第二段落 $x^2$ tail";
+    let para_at = line(3, Kind::Para, para, &mut nodes, &mut source);
+    let formula = "$x^2$";
+    let formula_at = para_at + para.find(formula).expect("the formula is in the paragraph");
+    nodes.push(MdNode {
+        id: 4,
+        kind: Kind::Formula,
+        text: formula.to_string(),
+        span: (formula_at, formula_at + formula.len()),
+    });
+
+    line(
+        5,
+        Kind::Para,
+        "spans the page break",
+        &mut nodes,
+        &mut source,
+    );
+    line(6, Kind::Para, "last paragraph", &mut nodes, &mut source);
+
     MdAst { nodes, source }
 }
 
