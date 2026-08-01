@@ -223,6 +223,12 @@ fn build_libraries() -> (PathBuf, PathBuf, Vec<String>) {
         build.arg("--release");
     }
     build.args(["--", "--print", "native-static-libs"]);
+    // The note below is read by a machine, so ask for it unstyled. CI sets
+    // `CARGO_TERM_COLOR: always`, which this call inherits, and the linker then
+    // receives `-lc` with a colour reset welded onto the end of it:
+    //
+    //     /usr/bin/ld: cannot find -lc\x1b[0m: No such file or directory
+    build.env("CARGO_TERM_COLOR", "never");
     let built = build
         .output()
         .expect("cargo must be runnable to build the archive a C consumer links");
@@ -231,7 +237,7 @@ fn build_libraries() -> (PathBuf, PathBuf, Vec<String>) {
         built.status.success(),
         "building the staticlib failed:\n{notes}"
     );
-    let native_libs = notes
+    let native_libs: Vec<String> = notes
         .lines()
         .find_map(|l| l.split("native-static-libs:").nth(1))
         .unwrap_or_else(|| {
@@ -240,6 +246,15 @@ fn build_libraries() -> (PathBuf, PathBuf, Vec<String>) {
         .split_whitespace()
         .map(str::to_owned)
         .collect();
+    // A token that is not a plain link flag means the note arrived styled after
+    // all, and the link below would otherwise fail as an unreadable `cannot
+    // find` from the linker rather than as a statement about what went wrong.
+    for lib in &native_libs {
+        assert!(
+            lib.starts_with('-') && !lib.chars().any(char::is_control),
+            "rustc reported {lib:?} among the native static libs, which is not a link flag"
+        );
+    }
 
     let archive = profile_dir().join("libcomposition_ir_ffi.a");
     let shared = profile_dir().join(format!(
