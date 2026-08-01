@@ -347,6 +347,16 @@ considers impossible — so the manifest marks them. And `Parts` publishes its
 flag values outright instead of leaving every binding to rederive
 `1 << discriminant`. [`parts_flags_agree_with_part_discriminants`]
 
+**A manifest describes one ABI, and says which.** Offsets are not portable:
+where `u64` is 4-aligned — Android's `x86` ABI is the one that reaches this
+project — `Address.id` sits at 4 rather than 8 and a `Diff` is 24 bytes rather
+than 32. So each manifest carries the pointer width, `u64` alignment, and
+endianness it was generated under, a binding generator must check that block
+against its target rather than assume there is one layout, and a target whose
+ABI differs needs its own committed manifest. Regenerating over another ABI's
+manifest is refused rather than allowed, because it would leave every binding
+built for the first one reading at offsets nothing produces.
+
 ## 10. Streaming and long sessions
 
 Streaming is ordinary editing. There is no chunk-shaped record, revision

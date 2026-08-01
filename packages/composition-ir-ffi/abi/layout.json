@@ -1,6 +1,11 @@
 {
   "manifest_format": 1,
   "generated_by": "composition-ir-ffi: cargo test -p composition-ir-ffi, UPDATE_ABI=1",
+  "target": {
+    "pointer_width": 64,
+    "u64_align": 8,
+    "endian": "little"
+  },
   "types": [
     {
       "name": "Domain",

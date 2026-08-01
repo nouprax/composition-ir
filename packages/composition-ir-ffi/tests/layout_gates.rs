@@ -1,9 +1,19 @@
 //! Conformance gates for the layout manifest, `docs/specs/composition-ir.md` §9.
 
 use composition_ir::{Part, Parts};
-use composition_ir_ffi::layout::{ALL_PARTS, COMMITTED_MANIFEST, manifest_json};
+use composition_ir_ffi::layout::{ALL_PARTS, COMMITTED_MANIFEST, manifest_json, target_abi};
 
 const MANIFEST_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/abi/layout.json");
+const IR_SRC: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../composition-ir/src");
+
+/// One type's entry, so a member is looked for under the type that declares it
+/// rather than anywhere in the file. Searching the whole manifest let a field
+/// pass because a *different* type happened to have a field by that name.
+fn type_entry<'a>(manifest: &'a str, name: &str) -> Option<&'a str> {
+    manifest
+        .split("\n    {\n")
+        .find(|entry| entry.starts_with(&format!("      \"name\": \"{name}\",")))
+}
 
 /// The offsets bindings are generated from must be the offsets the compiler
 /// produced. A reorder of two fields in a `#[repr(C)]` struct changes no size,
@@ -14,6 +24,32 @@ fn the_committed_layout_matches_the_compiled_one() {
     let compiled = manifest_json();
     if COMMITTED_MANIFEST == compiled {
         return;
+    }
+    // Before anything else -- including regenerating -- rule out the other
+    // explanation for a mismatch: this is a different ABI, and no layout was
+    // harmed. Offsets are not portable. Where `u64` is 4-aligned, which is
+    // Android's x86 ABI, `Address.id` sits at 4 rather than 8 and `Diff` is 24
+    // bytes rather than 32.
+    //
+    // This runs ahead of the `UPDATE_ABI` path deliberately: regenerating on
+    // such a target would replace one ABI's answer with another's, leaving
+    // every binding for the first one reading at offsets nothing produces.
+    // A manifest with no target block predates this check and is allowed
+    // through, which is what lets the block be added in the first place.
+    let abi = target_abi();
+    if COMMITTED_MANIFEST.contains("\"target\": {") {
+        for (key, value) in [
+            ("pointer_width", abi.pointer_width),
+            ("u64_align", abi.u64_align),
+        ] {
+            assert!(
+                COMMITTED_MANIFEST.contains(&format!("\"{key}\": {value},")),
+                "the committed manifest describes a different ABI than this target \
+                 ({key} = {value} here). Commit a manifest for this target rather than \
+                 overwriting the one that is here -- a binding built for the other ABI \
+                 would then be reading at offsets nothing produces."
+            );
+        }
     }
     if std::env::var("UPDATE_ABI").is_ok() {
         std::fs::write(MANIFEST_PATH, &compiled).expect("rewrite the manifest");
@@ -40,25 +76,34 @@ fn the_committed_layout_matches_the_compiled_one() {
 /// impossible to miss, because it does not depend on anyone remembering.
 #[test]
 fn every_abi_type_the_ir_publishes_is_in_the_manifest() {
-    const SOURCES: [(&str, &str); 4] = [
-        (
-            "address.rs",
-            include_str!("../../composition-ir/src/address.rs"),
-        ),
-        ("node.rs", include_str!("../../composition-ir/src/node.rs")),
-        (
-            "delta.rs",
-            include_str!("../../composition-ir/src/delta.rs"),
-        ),
-        (
-            "placement.rs",
-            include_str!("../../composition-ir/src/placement.rs"),
-        ),
-    ];
+    // Every module, discovered. A fixed list of files covers the modules that
+    // existed when it was written, so a `#[repr(C)]` type in a *new* module is
+    // exactly the ABI growth this gate exists to catch and exactly what it
+    // would not look at.
+    let mut sources: Vec<(String, String)> = std::fs::read_dir(IR_SRC)
+        .expect("the IR's source must be readable from the suite that describes its ABI")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "rs"))
+        .map(|p| {
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                std::fs::read_to_string(&p).unwrap_or_default(),
+            )
+        })
+        .collect();
+    sources.sort();
+    assert!(
+        sources.iter().any(|(n, _)| n == "address.rs"),
+        "found {} source files and not address.rs; the scan is looking in the wrong place",
+        sources.len()
+    );
+
     let manifest = manifest_json();
     let mut checked = 0;
 
-    for (file, src) in SOURCES {
+    for (file, src) in &sources {
+        let (file, src) = (file.as_str(), src.as_str());
         for chunk in src.split("#[repr(").skip(1) {
             // Whichever of the two comes first -- not `pub struct` by
             // preference. Preferring one made this scan walk past a `pub enum`
@@ -85,11 +130,12 @@ fn every_abi_type_the_ir_publishes_is_in_the_manifest() {
                 .chars()
                 .take_while(|c| c.is_alphanumeric() || *c == '_')
                 .collect();
-            assert!(
-                manifest.contains(&format!("\"name\": \"{head}\"")),
-                "{file}: `{head}` is #[repr]'d and public but absent from the manifest, \
-                 so no binding can read it"
-            );
+            let entry = type_entry(&manifest, &head).unwrap_or_else(|| {
+                panic!(
+                    "{file}: `{head}` is #[repr]'d and public but absent from the manifest, \
+                     so no binding can read it"
+                )
+            });
             checked += 1;
 
             // Its members, too: a field added to an existing type is the same
@@ -117,9 +163,13 @@ fn every_abi_type_the_ir_publishes_is_in_the_manifest() {
                 if member.is_empty() || !member.chars().all(|c| c.is_alphanumeric() || c == '_') {
                     continue;
                 }
+                // Under its own type's entry, not anywhere in the manifest.
+                // Globally, adding `x` to `Rgba` was satisfied by `Rect.x`,
+                // so the field could be missing from the type that declares
+                // it and every gate would still pass.
                 assert!(
-                    manifest.contains(&format!("\"name\": \"{member}\"")),
-                    "{file}: {head}.{member} is public but absent from the manifest"
+                    entry.contains(&format!("\"name\": \"{member}\"")),
+                    "{file}: {head}.{member} is public but absent from {head}'s manifest entry"
                 );
             }
         }

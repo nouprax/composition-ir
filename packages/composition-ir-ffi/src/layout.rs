@@ -192,14 +192,48 @@ fn emit_enum(j: &mut Json, name: &str, size: usize, align: usize, variants: &[(&
     j.close("},");
 }
 
-/// The manifest, generated from the compiled types.
+/// The facts about the target that decide every offset below.
+///
+/// A layout is not universal. Where `u64` is 4-aligned -- 32-bit x86 is the one
+/// that reaches this project, as Android's `x86` ABI -- `Address.id` sits at 4
+/// rather than 8 and `Diff` is 24 bytes rather than 32. A binding generated
+/// from the wrong manifest reads the wrong bytes and reports nothing.
+///
+/// So the manifest states which ABI it describes, and a binding generator can
+/// check it holds the right one instead of assuming there is only one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TargetAbi {
+    pub pointer_width: usize,
+    pub u64_align: usize,
+    pub endian: &'static str,
+}
+
+pub fn target_abi() -> TargetAbi {
+    TargetAbi {
+        pointer_width: usize::BITS as usize,
+        u64_align: align_of::<u64>(),
+        endian: if cfg!(target_endian = "little") {
+            "little"
+        } else {
+            "big"
+        },
+    }
+}
+
+/// The manifest, generated from the compiled types for the current target.
 pub fn manifest_json() -> String {
+    let abi = target_abi();
     let mut j = Json::new();
     j.open("{");
     j.line(&format!("\"manifest_format\": {MANIFEST_FORMAT},"));
     j.line(
         "\"generated_by\": \"composition-ir-ffi: cargo test -p composition-ir-ffi, UPDATE_ABI=1\",",
     );
+    j.open("\"target\": {");
+    j.line(&format!("\"pointer_width\": {},", abi.pointer_width));
+    j.line(&format!("\"u64_align\": {},", abi.u64_align));
+    j.line(&format!("\"endian\": \"{}\"", abi.endian));
+    j.close("},");
     j.open("\"types\": [");
 
     emit_scalar(
