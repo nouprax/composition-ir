@@ -12,6 +12,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The same matrix the release builds, running the same script. Not a subset:
+  # a target that fails to build is found at the tag otherwise, which is the
+  # one moment nothing can be done about it. The cost is runner minutes, and
+  # `docs/direction.md` already accepted that trade for exactly this class of
+  # thing when it put the bindings in this repository.
+  bundle:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, runner: macos-latest }
+          - { target: x86_64-apple-darwin, runner: macos-latest }
+          - { target: aarch64-apple-ios, runner: macos-latest }
+          - { target: aarch64-apple-ios-sim, runner: macos-latest }
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-latest }
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: .github/scripts/bundle.sh ${{ matrix.target }}
+
+      # The archive is opened rather than trusted. `bundle.sh` checks the files
+      # it staged; this checks what came out the other end of `tar`, which is
+      # what a consumer will actually unpack.
+      - name: The bundle carries what a binding needs
+        run: |
+          set -euo pipefail
+          version=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          name="composition-ir-${version}-${{ matrix.target }}"
+          tar -tzf "dist/${name}.tar.gz" > /tmp/listing
+          missing=0
+          for entry in \
+            "${name}/include/composition_ir.h" \
+            "${name}/abi/layout.json" \
+            "${name}/lib/libcomposition_ir_ffi.a" \
+            "${name}/LICENSE"
+          do
+            grep -qx "$entry" /tmp/listing || { echo "::error::${name}.tar.gz has no ${entry}"; missing=1; }
+          done
+          grep -qE "${name}/lib/libcomposition_ir_ffi\.(dylib|so)$" /tmp/listing \
+            || { echo "::error::${name}.tar.gz carries no shared library"; missing=1; }
+          exit $missing
+
   dry-run:
     name: release dry run
     runs-on: ubuntu-latest
@@ -67,6 +114,53 @@ jobs:
                   print(f"::error::{p}")
               sys.exit(1)
           print("jobs.publish authenticates by OIDC, in the crates-io environment")
+          PYEOF
+
+      # The dry run above is only evidence about the release if it builds the
+      # same set. Two matrices in two files drift the moment one is edited, and
+      # the drift is invisible: the dry run goes on passing while covering less
+      # than it ships. Ordering is checked here too -- a `cargo publish` that
+      # did not wait for the bundles could put a version on crates.io whose
+      # artifacts never built, and that cannot be undone, only yanked.
+      - name: The dry run builds what the release ships, and in an order that can fail safely
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          python3 - <<'PYEOF'
+          import sys, yaml
+
+          release = yaml.safe_load(open(".github/workflows/release.yml"))["jobs"]
+          dry = yaml.safe_load(open(".github/workflows/release-dry-run.yml"))["jobs"]
+          problems = []
+
+          def targets(jobs, name):
+              entries = jobs.get(name, {}).get("strategy", {}).get("matrix", {}).get("include", [])
+              return {e["target"] for e in entries}
+
+          shipped, exercised = targets(release, "bundle"), targets(dry, "bundle")
+          if not shipped:
+              problems.append("release.yml builds no targets, so this check is vacuous")
+          if shipped != exercised:
+              problems.append(
+                  f"the dry run does not build {sorted(shipped - exercised)} "
+                  f"and builds {sorted(exercised - shipped)} that no release ships"
+              )
+
+          def needs(jobs, name):
+              n = jobs.get(name, {}).get("needs", [])
+              return [n] if isinstance(n, str) else n
+
+          if "bundle" not in needs(release, "publish"):
+              problems.append("jobs.publish does not wait for the bundles; crates.io cannot be undone")
+          if "publish" not in needs(release, "release"):
+              problems.append("jobs.release does not wait for the publish, so a release can advertise a version that is not on crates.io")
+          if release.get("release", {}).get("permissions", {}).get("contents") != "write":
+              problems.append("jobs.release cannot write contents, so it cannot attach anything")
+
+          if problems:
+              for p in problems:
+                  print(f"::error::{p}")
+              sys.exit(1)
+          print("the dry run builds", sorted(shipped), "and the release cannot publish before they do")
           PYEOF
 
       - name: The tag the release job would accept

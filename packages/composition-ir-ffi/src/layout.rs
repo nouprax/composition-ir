@@ -210,7 +210,7 @@ pub struct TargetAbi {
     pub endian: &'static str,
 }
 
-pub fn target_abi() -> TargetAbi {
+pub const fn target_abi() -> TargetAbi {
     TargetAbi {
         pointer_width: usize::BITS as usize,
         u64_align: align_of::<u64>(),
@@ -221,6 +221,51 @@ pub fn target_abi() -> TargetAbi {
         },
     }
 }
+
+/// The ABI `abi/layout.json` was generated under.
+///
+/// Stated as a constant so it can be compared *at compile time*. Every other
+/// check in this crate runs a test, and a cross-compiled build runs none: a
+/// release job builds for `aarch64-apple-ios` on a macOS runner and for
+/// `i686-linux-android` on a Linux one, and neither executes a single gate on
+/// the machine the library is for. The one moment such a build can be stopped
+/// is while it compiles.
+pub const MANIFEST_ABI: TargetAbi = TargetAbi {
+    pointer_width: 64,
+    u64_align: 8,
+    endian: "little",
+};
+
+const fn abi_eq(a: TargetAbi, b: TargetAbi) -> bool {
+    // `==` on `&str` is not const, and this is the whole of the string
+    // comparison the guard needs.
+    let (x, y) = (a.endian.as_bytes(), b.endian.as_bytes());
+    if x.len() != y.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < x.len() {
+        if x[i] != y[i] {
+            return false;
+        }
+        i += 1;
+    }
+    a.pointer_width == b.pointer_width && a.u64_align == b.u64_align
+}
+
+/// Building for an ABI the committed manifest does not describe is refused
+/// here rather than allowed to ship.
+///
+/// `docs/specs/composition-ir.md` §9.1 states that a target whose ABI differs
+/// needs its own committed manifest. Android's `x86` ABI aligns `u64` to 4, so
+/// on it `Address.id` sits at 4 rather than 8 and a `Diff` is 24 bytes rather
+/// than 32 -- and a binding generated from this manifest would read at offsets
+/// that target never produces, reporting nothing wrong at any point.
+const _: () = assert!(
+    abi_eq(target_abi(), MANIFEST_ABI),
+    "this target's ABI is not the one abi/layout.json describes. Commit a manifest for \
+     this target rather than shipping a library built against another one's offsets."
+);
 
 /// The manifest, generated from the compiled types for the current target.
 pub fn manifest_json() -> String {

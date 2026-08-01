@@ -1,7 +1,9 @@
 //! Conformance gates for the layout manifest, `docs/specs/composition-ir.md` §9.
 
 use composition_ir::{Part, Parts};
-use composition_ir_ffi::layout::{ALL_PARTS, COMMITTED_MANIFEST, manifest_json, target_abi};
+use composition_ir_ffi::layout::{
+    ALL_PARTS, COMMITTED_MANIFEST, MANIFEST_ABI, manifest_json, target_abi,
+};
 
 const MANIFEST_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/abi/layout.json");
 /// Both crates that declare ABI types: the IR's own, and the shim's borrowed
@@ -190,6 +192,39 @@ fn every_abi_type_the_ir_publishes_is_in_the_manifest() {
     assert!(
         checked >= 10,
         "found only {checked} ABI types by reading the source; the scan stopped working"
+    );
+}
+
+/// The guard that refuses to build for another ABI compares against a constant,
+/// because a comparison against the file cannot happen while compiling. That
+/// makes the constant a second statement of the same fact, and this is what
+/// stops the two from disagreeing.
+///
+/// Without it the guard would still be *sound* on a host that runs the suite --
+/// `the_committed_layout_matches_the_compiled_one` ties the file to this target
+/// and the guard ties the constant to it, so the two agree transitively. It is
+/// here because that argument holds only where both run, and the whole point of
+/// the guard is the builds where neither does.
+#[test]
+fn the_manifest_and_the_build_guard_name_one_abi() {
+    for (key, value) in [
+        ("pointer_width", MANIFEST_ABI.pointer_width.to_string()),
+        ("u64_align", MANIFEST_ABI.u64_align.to_string()),
+        ("endian", format!("\"{}\"", MANIFEST_ABI.endian)),
+    ] {
+        assert!(
+            COMMITTED_MANIFEST.contains(&format!("\"{key}\": {value}")),
+            "abi/layout.json does not say {key} is {value}, which is what the build guard \
+             in layout.rs refuses to differ from"
+        );
+    }
+    // And the guard is about *this* build only when this build is the one the
+    // manifest describes -- which is what makes the assertion above meaningful
+    // rather than a comparison of two constants nobody reached.
+    assert_eq!(
+        target_abi(),
+        MANIFEST_ABI,
+        "the suite is running on an ABI the manifest does not describe"
     );
 }
 

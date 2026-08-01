@@ -152,6 +152,37 @@ simply had no way to read any text. Completeness is now checked against the
 built library's symbol table, which no spelling in the source can hide from, and
 the macro is written out longhand.
 
+### What a release ships, and what it may not ship
+
+Per target: both libraries, the header, and `abi/layout.json`, as one archive.
+
+**Both libraries, not one.** A Swift or Kotlin consumer links the archive into
+its own binary; a JVM host or a plugin loads the shared library at run time.
+Shipping one kind picks a consumer's linkage model for it.
+
+**The publish waits for the artifacts.** A `cargo publish` cannot be undone,
+only yanked, so nothing irreversible happens until every target has built. The
+GitHub release is created last, so a release never advertises a version that
+failed to publish.
+
+**The dry run builds the whole matrix, not a sample.** A target that fails to
+build is otherwise found at the tag, which is the one moment nothing can be done
+about it. This costs macOS runner minutes; that trade was already made above,
+for this same class of thing, when the bindings were put in this repository.
+
+The set is every target that shares one ABI — 64-bit, little endian, `u64`
+8-aligned — which is not a coincidence and is not maintained by eye. `layout.rs`
+compares the target it is compiling for against the ABI the manifest describes
+and fails the build on a mismatch, so a target needing its own manifest cannot
+join the list quietly. `i686-linux-android` is refused today, which is the
+first time that rule has been anything but prose.
+
+Deferred with a reason rather than forgotten: **Android**, because its four
+ABIs need the NDK and its `x86` one forces a second committed manifest and the
+rule for choosing between manifests, which is a design change rather than a
+matrix entry; and **`aarch64-unknown-linux-gnu`**, which needs a cross linker
+and has no consumer asking for it yet.
+
 ## Working method
 
 `AGENTS.md` has the engineering standard. Two things belong here because they
@@ -167,6 +198,10 @@ was skipped:
   Rewritten to check both directions.
 - Three "caught it" results in a mutation run were the script erroring on
   `mapfile`, which macOS bash 3.2 does not have. Nothing had been checked.
+- The bundle script collected the libraries it found in the target directory
+  rather than the ones the build reported producing. Dropping a `--crate-type`
+  still shipped a bundle, because the previous run's file was still sitting
+  there — and CI restores that directory from a cache.
 - The ABI completeness scan preferred `pub struct` over `pub enum` instead of
   taking whichever came first, so it checked a type that is not in the ABI at
   all while silently not checking the one that is.
@@ -177,26 +212,21 @@ list that did not know a new test file existed, a four-file source inventory
 that could not see a new module. Discover, and assert the discovery found
 something.
 
+**macOS bash is 3.2, and its failures do not look like failures.** `mapfile` is
+absent, and a heredoc inside a process substitution is a *parse* error that
+leaves the script exiting 0 having done nothing. Anything a release runs on a
+macOS runner is written for 3.2 and run under `/bin/bash` before it is believed.
+
 ## Next, in order
 
-1. **The release-artifact pipeline.** `.a`/`.dylib`/`.so` for each target the
-   products ship to, with the header and `abi/layout.json` beside them, attached
-   to a GitHub release. This is what a binding consumes, and no binding can be
-   written before it exists. The header itself is done and committed; what is
-   left is building the libraries per target and publishing the set.
-
-   One thing to settle there rather than assume: Android's `x86` ABI aligns
-   `u64` to 4, so shipping a library for it means committing a second manifest
-   for it, and the gate that refuses to regenerate over another ABI's manifest
-   has never been exercised against a target that actually differs.
-2. **The queries the SBS workloads need**, which are the four "does not exist
+1. **The queries the SBS workloads need**, which are the four "does not exist
    yet" rows above: `address_at(point)`, a viewport query over `Placement` for
    visible-set culling, the frontend's inverse `offset → address`, and an
    encoding profile so a UTF-16 host is not rescanning the source per caret
    move. The last two are `frontend-contract.md` changes and are cheap now,
    expensive once a frontend ships against it.
-3. **The first binding**, Swift or KMP, generated from the manifest.
-4. **`tex-core` onto composition-ir**, staged, starting with the downstream
+2. **The first binding**, Swift or KMP, generated from the manifest.
+3. **`tex-core` onto composition-ir**, staged, starting with the downstream
    that was going to be rewritten anyway. The math engine goes last.
 
 ## Open, deliberately
