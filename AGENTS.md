@@ -5,9 +5,16 @@ that review pull requests. It carries engineering philosophy, the constraints
 this repository specifically imposes, and the concrete triggers a reviewer must
 act on.
 
-It does not carry product concepts, module inventories, or transient project
-state. Those live in `docs/specs/` and are normative there; this file governs
-*how* code is written and reviewed, not *what* the product is.
+It does not carry product concepts, module inventories, roadmap, or operational
+state: this file governs *how* code is written and reviewed, not *what* the
+product is. The other two pieces divide the rest between them.
+
+- `docs/specs/` is normative and holds the product concepts, the module
+  inventories, and the contracts themselves.
+- `docs/direction.md` is not normative and holds what has been decided and why,
+  what is next, what is deliberately still open, and the project's operational
+  state. Read it before proposing a direction, so a road already closed is not
+  reopened without the argument that closed it.
 
 ## First-principles engineering
 
@@ -144,6 +151,14 @@ measure it directly rather than inferring it from timing.
   Randomized equivalence against a from-scratch computation is what catches the
   case nobody thought of; both bugs found so far in this repository were found
   that way and were invisible to three hand-written gates each.
+- **A gate you have not watched fail is a hypothesis.** Break the rule it
+  claims to check and confirm it goes red, in the same change that adds it. A
+  false PASS has turned up every time this was skipped, and it is invisible
+  afterwards: a green suite looks identical whether the gate is discriminating
+  or inert.
+- A check that finds no files passes. Any check that walks a tree must discover
+  what it walks and fail loudly on an empty result, never hardcode a path that
+  a directory move silently empties.
 
 ## Failure modes already proven in this codebase
 

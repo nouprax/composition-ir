@@ -96,6 +96,7 @@ conformance/                 what proves the contracts, and never ships
     tests/gates.rs           what a backend may read, and what it costs
 
 docs/specs/                  the contracts, normative
+docs/direction.md            what was decided and why, what is next
 ```
 
 `packages/` is where the language bindings will go — Swift, Kotlin
