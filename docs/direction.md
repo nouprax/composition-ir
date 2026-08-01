@@ -104,9 +104,9 @@ consumers write the same thing differently, they disagree about what the IR
 
 | | ours |
 |---|---|
-| diff → dirty set, with `Descendant` bubbling | yes, as a callable fold; the raw slice stays available for a consumer fusing it into its own diffing |
+| diff → dirty set, with `Descendant` bubbling | yes — the delta *is* the dirty set: `diffs_between` bubbles `Descendant` in, and `Delta::as_slice` hands over the raw slice for a consumer fusing it into its own diffing |
 | point → address hit test | yes — **does not exist yet** |
-| visible-set culling | yes |
+| visible-set culling | yes — **does not exist yet**; `Placement` resolves one address at a time and has no viewport query |
 | caret offset → address | the frontend's, and the contract should require it — **does not exist yet** |
 | UTF-8 ↔ UTF-16 offset profiles | the frontend's — **does not exist yet** |
 | math layout | `tex-core`'s |
@@ -159,11 +159,12 @@ something.
    the generated header, and `abi/layout.json` attached to a GitHub release.
    This is what a binding consumes, and no binding can be written before it
    exists.
-2. **The queries the SBS workloads need**, which are the three "does not exist
-   yet" rows above: `address_at(point)`, the frontend's inverse
-   `offset → address`, and an encoding profile so a UTF-16 host is not rescanning
-   the source per caret move. The second and third are `frontend-contract.md`
-   changes and are cheap now, expensive once a frontend ships against it.
+2. **The queries the SBS workloads need**, which are the four "does not exist
+   yet" rows above: `address_at(point)`, a viewport query over `Placement` for
+   visible-set culling, the frontend's inverse `offset → address`, and an
+   encoding profile so a UTF-16 host is not rescanning the source per caret
+   move. The last two are `frontend-contract.md` changes and are cheap now,
+   expensive once a frontend ships against it.
 3. **The first binding**, Swift or KMP, generated from the manifest.
 4. **`tex-core` onto composition-ir**, staged, starting with the downstream
    that was going to be rewritten anyway. The math engine goes last.
@@ -189,8 +190,11 @@ something.
 ## Operational state
 
 - **`v0.1.0` published `composition-ir`, `composition-derive`, and
-  `composition-ir-ffi`.** The latter two are now gone from the workspace and
-  **still need yanking** — an owner action.
+  `composition-ir-ffi`.** Both of the latter **still need yanking** — an owner
+  action. Their workspace status differs, and conflating the two would misread
+  this record: `composition-derive` is gone entirely, folded into
+  `composition-ir` as a default feature, while `composition-ir-ffi` is still a
+  workspace member and is simply `publish = false`.
 - **Trusted Publishing (OIDC) has never been exercised.** `v0.1.0` released
   before it landed, using the stored token. No pull request can exercise the
   OIDC exchange, so the stored `CARGO_REGISTRY_TOKEN` must stay until the first

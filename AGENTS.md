@@ -5,14 +5,16 @@ that review pull requests. It carries engineering philosophy, the constraints
 this repository specifically imposes, and the concrete triggers a reviewer must
 act on.
 
-It does not carry product concepts, module inventories, or transient project
-state. Those live in `docs/specs/` and are normative there; this file governs
-*how* code is written and reviewed, not *what* the product is.
+It does not carry product concepts, module inventories, roadmap, or operational
+state: this file governs *how* code is written and reviewed, not *what* the
+product is. The other two pieces divide the rest between them.
 
-`docs/direction.md` is the third piece and is not normative: what has been
-decided and why, what is next, and what is deliberately still open. Read it
-before proposing a direction, so a road already closed is not reopened without
-the argument that closed it.
+- `docs/specs/` is normative and holds the product concepts, the module
+  inventories, and the contracts themselves.
+- `docs/direction.md` is not normative and holds what has been decided and why,
+  what is next, what is deliberately still open, and the project's operational
+  state. Read it before proposing a direction, so a road already closed is not
+  reopened without the argument that closed it.
 
 ## First-principles engineering
 
