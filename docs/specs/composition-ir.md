@@ -315,6 +315,34 @@ and reference-counted, releasing one handle does not invalidate another, and a
 handle is the only thing a caller must remember to release.
 [`handles_are_retained_and_released_independently`]
 
+A **record** crosses as a borrowed pointer, and its fields as borrowed views
+into the IR's own allocations. It cannot cross by value — it holds `String` and
+`Vec`, whose layouts Rust does not guarantee — and copying one out per record
+would be the per-entry conversion this boundary is shaped to avoid, paid on the
+initial render of every document.
+[`reading_a_record_borrows_the_irs_own_bytes`]
+
+The record is looked up once and its fields read from that pointer, rather than
+each accessor taking an address. That is one lookup per record instead of one
+per field, and it means **absence is answered once**: the lookup returns null,
+so no accessor has to invent a sentinel a caller would then have to tell apart
+from empty text or a zero.
+[`an_absent_address_is_null_rather_than_an_empty_record`]
+
+The whole surface must be sufficient to drive a consumer, not merely cheap. A
+document is walked from `cir_snapshot_roots` through `cir_node_children` and
+rendered using `cir_*` calls alone — no enumeration call, because a traversal
+needs none.
+[`a_consumer_can_render_from_the_c_boundary_alone`]
+
+Placement stays a query here too, so a move costs a call and publishes nothing.
+[`a_move_is_answered_by_the_placement_query_not_by_the_delta`]
+
+One consequence for the IR: a record's resource references are a
+`#[repr(C)] ResourceRef`, not a tuple. A Rust tuple has no guaranteed layout,
+so a tuple field could only cross by being converted per record — which is the
+copy again, in the one place it would be least visible.
+
 Calls are named `cir_<subject>_<verb>`, the subject being the type the call
 operates on or produces.
 

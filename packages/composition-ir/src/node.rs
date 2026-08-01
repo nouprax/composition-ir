@@ -144,6 +144,19 @@ impl ResourceRole {
     }
 }
 
+/// One resource reference: which resource, and what it is used for.
+///
+/// A named `#[repr(C)]` pair rather than a tuple, because a Rust tuple has no
+/// guaranteed layout and so cannot be handed to a C consumer as a slice. The
+/// alternative would be converting the list per record on every read, which is
+/// the per-entry copy the whole boundary is shaped to avoid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(C)]
+pub struct ResourceRef {
+    pub role: ResourceRole,
+    pub address: Address,
+}
+
 /// One published record. Immutable; snapshots share these by pointer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
@@ -155,7 +168,7 @@ pub struct Node {
     pub lines: i64,
     pub paint: Rgba,
     /// resources this record draws with, by role. Not children.
-    pub resources: Vec<(ResourceRole, crate::address::Address)>,
+    pub resources: Vec<ResourceRef>,
     /// which fragments -- pages, columns, regions -- this record occupies, in
     /// order. Empty means unplaced or unfragmented.
     pub fragments: Vec<u32>,
@@ -188,8 +201,8 @@ impl Node {
     pub fn resources_for(&self, part: Part) -> Vec<crate::address::Address> {
         self.resources
             .iter()
-            .filter(|(role, _)| role.part() == part)
-            .map(|(_, a)| *a)
+            .filter(|r| r.role.part() == part)
+            .map(|r| r.address)
             .collect()
     }
 

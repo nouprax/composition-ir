@@ -19,9 +19,11 @@
 use std::mem::{align_of, offset_of, size_of};
 
 use composition_ir::{
-    Address, Diff, Domain, Id, Part, Parts, Rect, ResourceRole, Revision, Rgba, SnapshotVersion,
-    Space,
+    Address, Diff, Domain, Id, Part, Parts, Rect, ResourceRef, ResourceRole, Revision, Rgba,
+    SnapshotVersion, Space,
 };
+
+use crate::record::{CirAddresses, CirBytes, CirFragments, CirResources};
 
 /// Bumped when the meaning of the manifest itself changes -- a new field on an
 /// entry, a new `kind`. Not a version of the ABI it describes: that is the
@@ -412,6 +414,106 @@ pub fn manifest_json() -> String {
         ],
         false,
     );
+    emit_struct(
+        &mut j,
+        "ResourceRef",
+        size_of::<ResourceRef>(),
+        align_of::<ResourceRef>(),
+        &[
+            Field {
+                name: "role",
+                ty: "ResourceRole",
+                offset: offset_of!(ResourceRef, role),
+            },
+            Field {
+                name: "address",
+                ty: "Address",
+                offset: offset_of!(ResourceRef, address),
+            },
+        ],
+        false,
+    );
+
+    // The borrowed views. Each is a pointer and a count into an allocation the
+    // IR already owns; `len` counts elements, not bytes, everywhere but
+    // `CirBytes`, where an element is a byte.
+    emit_struct(
+        &mut j,
+        "CirBytes",
+        size_of::<CirBytes>(),
+        align_of::<CirBytes>(),
+        &[
+            Field {
+                name: "ptr",
+                ty: "u8",
+                offset: offset_of!(CirBytes, ptr),
+            },
+            Field {
+                name: "len",
+                ty: "usize",
+                offset: offset_of!(CirBytes, len),
+            },
+        ],
+        false,
+    );
+    emit_struct(
+        &mut j,
+        "CirAddresses",
+        size_of::<CirAddresses>(),
+        align_of::<CirAddresses>(),
+        &[
+            Field {
+                name: "ptr",
+                ty: "Address",
+                offset: offset_of!(CirAddresses, ptr),
+            },
+            Field {
+                name: "len",
+                ty: "usize",
+                offset: offset_of!(CirAddresses, len),
+            },
+        ],
+        false,
+    );
+    emit_struct(
+        &mut j,
+        "CirResources",
+        size_of::<CirResources>(),
+        align_of::<CirResources>(),
+        &[
+            Field {
+                name: "ptr",
+                ty: "ResourceRef",
+                offset: offset_of!(CirResources, ptr),
+            },
+            Field {
+                name: "len",
+                ty: "usize",
+                offset: offset_of!(CirResources, len),
+            },
+        ],
+        false,
+    );
+    emit_struct(
+        &mut j,
+        "CirFragments",
+        size_of::<CirFragments>(),
+        align_of::<CirFragments>(),
+        &[
+            Field {
+                name: "ptr",
+                ty: "u32",
+                offset: offset_of!(CirFragments, ptr),
+            },
+            Field {
+                name: "len",
+                ty: "usize",
+                offset: offset_of!(CirFragments, len),
+            },
+        ],
+        false,
+    );
+
     emit_struct(
         &mut j,
         "Rgba",

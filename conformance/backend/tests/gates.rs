@@ -7,7 +7,7 @@ use std::num::NonZeroU64;
 
 use backend_conformance::{paged::Paged, raster::Raster, svg::Svg};
 use composition_ir::{
-    Address, Domain, Id, Node, Rect, ResourceRole, Revision, Rgba, Snapshot, Space,
+    Address, Domain, Id, Node, Rect, ResourceRef, ResourceRole, Revision, Rgba, Snapshot, Space,
 };
 
 fn dom() -> Domain {
@@ -234,7 +234,10 @@ fn a_record_names_its_resources_without_them_becoming_children() {
         subject,
         Node {
             text: "drawn with Inter".into(),
-            resources: vec![(ResourceRole::Font, font)],
+            resources: vec![ResourceRef {
+                role: ResourceRole::Font,
+                address: font,
+            }],
             ..Node::default()
         },
     );
@@ -245,7 +248,12 @@ fn a_record_names_its_resources_without_them_becoming_children() {
     );
 
     let mut e = base.edit();
-    e.update(subject, |n| n.resources = vec![(ResourceRole::Font, other)]);
+    e.update(subject, |n| {
+        n.resources = vec![ResourceRef {
+            role: ResourceRole::Font,
+            address: other,
+        }]
+    });
     let commit = e.commit();
 
     let entry = commit

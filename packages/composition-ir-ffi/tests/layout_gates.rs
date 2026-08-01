@@ -4,7 +4,13 @@ use composition_ir::{Part, Parts};
 use composition_ir_ffi::layout::{ALL_PARTS, COMMITTED_MANIFEST, manifest_json, target_abi};
 
 const MANIFEST_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/abi/layout.json");
-const IR_SRC: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../composition-ir/src");
+/// Both crates that declare ABI types: the IR's own, and the shim's borrowed
+/// views. Leaving the shim out would mean the completeness gate did not cover
+/// the crate whose whole job is the ABI.
+const ABI_SRC: [&str; 2] = [
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../composition-ir/src"),
+    concat!(env!("CARGO_MANIFEST_DIR"), "/src"),
+];
 
 /// One type's entry, so a member is looked for under the type that declares it
 /// rather than anywhere in the file. Searching the whole manifest let a field
@@ -80,24 +86,31 @@ fn every_abi_type_the_ir_publishes_is_in_the_manifest() {
     // existed when it was written, so a `#[repr(C)]` type in a *new* module is
     // exactly the ABI growth this gate exists to catch and exactly what it
     // would not look at.
-    let mut sources: Vec<(String, String)> = std::fs::read_dir(IR_SRC)
-        .expect("the IR's source must be readable from the suite that describes its ABI")
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "rs"))
-        .map(|p| {
-            (
-                p.file_name().unwrap().to_string_lossy().into_owned(),
-                std::fs::read_to_string(&p).unwrap_or_default(),
-            )
+    let mut sources: Vec<(String, String)> = ABI_SRC
+        .iter()
+        .flat_map(|dir| {
+            std::fs::read_dir(dir)
+                .unwrap_or_else(|e| panic!("{dir} must be readable to describe its ABI: {e}"))
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|x| x == "rs"))
+                .map(|p| {
+                    (
+                        p.file_name().unwrap().to_string_lossy().into_owned(),
+                        std::fs::read_to_string(&p).unwrap_or_default(),
+                    )
+                })
+                .collect::<Vec<_>>()
         })
         .collect();
     sources.sort();
-    assert!(
-        sources.iter().any(|(n, _)| n == "address.rs"),
-        "found {} source files and not address.rs; the scan is looking in the wrong place",
-        sources.len()
-    );
+    for expected in ["address.rs", "record.rs"] {
+        assert!(
+            sources.iter().any(|(n, _)| n == expected),
+            "found {} source files and not {expected}; the scan is looking in the wrong place",
+            sources.len()
+        );
+    }
 
     let manifest = manifest_json();
     let mut checked = 0;

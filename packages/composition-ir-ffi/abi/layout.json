@@ -147,6 +147,56 @@
       ]
     },
     {
+      "name": "ResourceRef",
+      "kind": "struct",
+      "size": 32,
+      "align": 8,
+      "fields": [
+        { "name": "role", "type": "ResourceRole", "offset": 0 },
+        { "name": "address", "type": "Address", "offset": 8 }
+      ]
+    },
+    {
+      "name": "CirBytes",
+      "kind": "struct",
+      "size": 16,
+      "align": 8,
+      "fields": [
+        { "name": "ptr", "type": "u8", "offset": 0 },
+        { "name": "len", "type": "usize", "offset": 8 }
+      ]
+    },
+    {
+      "name": "CirAddresses",
+      "kind": "struct",
+      "size": 16,
+      "align": 8,
+      "fields": [
+        { "name": "ptr", "type": "Address", "offset": 0 },
+        { "name": "len", "type": "usize", "offset": 8 }
+      ]
+    },
+    {
+      "name": "CirResources",
+      "kind": "struct",
+      "size": 16,
+      "align": 8,
+      "fields": [
+        { "name": "ptr", "type": "ResourceRef", "offset": 0 },
+        { "name": "len", "type": "usize", "offset": 8 }
+      ]
+    },
+    {
+      "name": "CirFragments",
+      "kind": "struct",
+      "size": 16,
+      "align": 8,
+      "fields": [
+        { "name": "ptr", "type": "u32", "offset": 0 },
+        { "name": "len", "type": "usize", "offset": 8 }
+      ]
+    },
+    {
       "name": "Rgba",
       "kind": "struct",
       "size": 4,

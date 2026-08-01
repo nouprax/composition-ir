@@ -19,6 +19,6 @@ mod snapshot;
 
 pub use address::{Address, Domain, Id, Revision, SnapshotVersion, Space};
 pub use delta::{Delta, Diff};
-pub use node::{Node, Part, Parts, ResourceRole, Rgba};
+pub use node::{Node, Part, Parts, ResourceRef, ResourceRole, Rgba};
 pub use placement::{Placement, Rect};
 pub use snapshot::{Commit, Snapshot, SnapshotBuilder};
